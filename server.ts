@@ -3,6 +3,28 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import Database from 'better-sqlite3';
 import { z } from 'zod';
 
+// Enhanced Universal Filters Interface
+interface UniversalFilters {
+  // ... existing filters ...
+  phase?: string | string[];           // Filter by current phase
+  phase_status?: string | string[];     // Filter by phase completion status
+  // ... other existing filters
+}
+
+// Enhanced List Response Format
+interface ListResponse<T> {
+  data: T[];
+  total_count: number;
+  filtered_count: number;
+  phase_context?: {                       // NEW: Phase context in responses
+    current_phase: string;
+    phase_status: string;
+    active_stakeholders: string[];
+  };
+  applied_filters: { [key: string]: any };
+  pagination?: { limit: number; offset: number; has_more: boolean };
+}
+
 // Initialize SQLite database
 const db = new Database('tracker.db');
 
@@ -33,6 +55,8 @@ db.exec(`
     current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
     story_points INTEGER,
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     tester_at DATETIME,
@@ -51,6 +75,8 @@ db.exec(`
     assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
     estimated_hours DECIMAL(5,2),
     actual_hours DECIMAL(5,2),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
@@ -69,6 +95,8 @@ db.exec(`
     assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'Open',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     fixed_at DATETIME,
@@ -89,6 +117,8 @@ db.exec(`
     created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_run_at DATETIME,
@@ -144,6 +174,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
   CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
   CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
+
+  -- Phase tracking indexes
+  CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
+  CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
+  CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+  CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
+  CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
+  CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
+  CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
+  CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
 
   -- Transition audit indexes
   CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
@@ -696,10 +736,12 @@ server.registerTool(
       epic_id: z.number().optional(),
       status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
       assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
+      phase: z.union([z.string(), z.array(z.string())]).optional(),
+      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      user_stories: z.array(z.object({
+      data: z.array(z.object({
         id: z.number(),
         epic_id: z.number().nullable(),
         title: z.string(),
@@ -709,13 +751,27 @@ server.registerTool(
         current_owner: z.string(),
         assigned_to: z.string().nullable(),
         story_points: z.number().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string()
       })),
-      count: z.number()
+      total_count: z.number(),
+      filtered_count: z.number(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
+      applied_filters: z.record(z.any()),
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
     }
   },
-  async ({ epic_id, status, assigned_to, limit = 50 }) => {
+  async ({ epic_id, status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       let query = 'SELECT * FROM user_stories WHERE 1=1';
       const params: any[] = [];
@@ -735,15 +791,53 @@ server.registerTool(
         params.push(assigned_to);
       }
 
+      if (phase) {
+        if (Array.isArray(phase)) {
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
+          params.push(...phase);
+        } else {
+          query += ' AND phase = ?';
+          params.push(phase);
+        }
+      }
+
+      if (phase_status) {
+        if (Array.isArray(phase_status)) {
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
+          params.push(...phase_status);
+        } else {
+          query += ' AND phase_status = ?';
+          params.push(phase_status);
+        }
+      }
+
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = db.prepare(query);
       const user_stories = stmt.all(...params);
 
+      // Calculate phase context
+      const phaseContext = user_stories.length > 0 ? {
+        current_phase: user_stories[0].phase || 'Not Set',
+        phase_status: user_stories[0].phase_status || 'New',
+        active_stakeholders: ['productmanager', 'architect', 'developer', 'tester']
+      } : undefined;
+
+      const appliedFilters: { [key: string]: any } = {};
+      if (epic_id) appliedFilters.epic_id = epic_id;
+      if (status) appliedFilters.status = status;
+      if (assigned_to) appliedFilters.assigned_to = assigned_to;
+      if (phase) appliedFilters.phase = phase;
+      if (phase_status) appliedFilters.phase_status = phase_status;
+
       const output = {
-        user_stories,
-        count: user_stories.length
+        data: user_stories,
+        total_count: user_stories.length,
+        filtered_count: user_stories.length,
+        phase_context: phaseContext,
+        applied_filters: appliedFilters,
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
@@ -770,10 +864,12 @@ server.registerTool(
       severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
       reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
       assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+      phase: z.union([z.string(), z.array(z.string())]).optional(),
+      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      bugs: z.array(z.object({
+      data: z.array(z.object({
         id: z.number(),
         user_story_id: z.number().nullable(),
         task_id: z.number().nullable(),
@@ -783,13 +879,27 @@ server.registerTool(
         severity: z.string(),
         reported_by: z.string(),
         assigned_to: z.string().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string()
       })),
-      count: z.number()
+      total_count: z.number(),
+      filtered_count: z.number(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
+      applied_filters: z.record(z.any()),
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
     }
   },
-  async ({ status, severity, reported_by, assigned_to, limit = 50 }) => {
+  async ({ status, severity, reported_by, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       let query = 'SELECT * FROM bugs WHERE 1=1';
       const params: any[] = [];
@@ -814,15 +924,54 @@ server.registerTool(
         params.push(assigned_to);
       }
 
+      if (phase) {
+        if (Array.isArray(phase)) {
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
+          params.push(...phase);
+        } else {
+          query += ' AND phase = ?';
+          params.push(phase);
+        }
+      }
+
+      if (phase_status) {
+        if (Array.isArray(phase_status)) {
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
+          params.push(...phase_status);
+        } else {
+          query += ' AND phase_status = ?';
+          params.push(phase_status);
+        }
+      }
+
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = db.prepare(query);
       const bugs = stmt.all(...params);
 
+      // Calculate phase context
+      const phaseContext = bugs.length > 0 ? {
+        current_phase: bugs[0].phase || 'Not Set',
+        phase_status: bugs[0].phase_status || 'Open',
+        active_stakeholders: ['productmanager', 'programmanager', 'developer', 'tester', 'architect']
+      } : undefined;
+
+      const appliedFilters: { [key: string]: any } = {};
+      if (status) appliedFilters.status = status;
+      if (severity) appliedFilters.severity = severity;
+      if (reported_by) appliedFilters.reported_by = reported_by;
+      if (assigned_to) appliedFilters.assigned_to = assigned_to;
+      if (phase) appliedFilters.phase = phase;
+      if (phase_status) appliedFilters.phase_status = phase_status;
+
       const output = {
-        bugs,
-        count: bugs.length
+        data: bugs,
+        total_count: bugs.length,
+        filtered_count: bugs.length,
+        phase_context: phaseContext,
+        applied_filters: appliedFilters,
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
@@ -847,23 +996,39 @@ server.registerTool(
     inputSchema: {
       status: z.enum(['New', 'Passed', 'Failed']).optional(),
       assigned_to: z.enum(['tester', 'productmanager']).optional(),
+      phase: z.union([z.string(), z.array(z.string())]).optional(),
+      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      test_cases: z.array(z.object({
+      data: z.array(z.object({
         id: z.number(),
         user_story_id: z.number().nullable(),
         title: z.string(),
         description: z.string().nullable(),
         status: z.string(),
         assigned_to: z.string().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string()
       })),
-      count: z.number()
+      total_count: z.number(),
+      filtered_count: z.number(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
+      applied_filters: z.record(z.any()),
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
     }
   },
-  async ({ status, assigned_to, limit = 50 }) => {
+  async ({ status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       let query = 'SELECT * FROM test_cases WHERE 1=1';
       const params: any[] = [];
@@ -878,15 +1043,52 @@ server.registerTool(
         params.push(assigned_to);
       }
 
+      if (phase) {
+        if (Array.isArray(phase)) {
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
+          params.push(...phase);
+        } else {
+          query += ' AND phase = ?';
+          params.push(phase);
+        }
+      }
+
+      if (phase_status) {
+        if (Array.isArray(phase_status)) {
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
+          params.push(...phase_status);
+        } else {
+          query += ' AND phase_status = ?';
+          params.push(phase_status);
+        }
+      }
+
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = db.prepare(query);
       const test_cases = stmt.all(...params);
 
+      // Calculate phase context
+      const phaseContext = test_cases.length > 0 ? {
+        current_phase: test_cases[0].phase || 'Not Set',
+        phase_status: test_cases[0].phase_status || 'New',
+        active_stakeholders: ['tester', 'productmanager']
+      } : undefined;
+
+      const appliedFilters: { [key: string]: any } = {};
+      if (status) appliedFilters.status = status;
+      if (assigned_to) appliedFilters.assigned_to = assigned_to;
+      if (phase) appliedFilters.phase = phase;
+      if (phase_status) appliedFilters.phase_status = phase_status;
+
       const output = {
-        test_cases,
-        count: test_cases.length
+        data: test_cases,
+        total_count: test_cases.length,
+        filtered_count: test_cases.length,
+        phase_context: phaseContext,
+        applied_filters: appliedFilters,
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
@@ -994,11 +1196,28 @@ server.registerTool(
     inputSchema: {
       status: z.enum(['pending', 'in_progress', 'completed']).optional(),
       priority: z.enum(['low', 'medium', 'high']).optional(),
+      phase: z.union([z.string(), z.array(z.string())]).optional(),
+      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
       limit: z.number().min(1).max(100).optional()
     },
-    outputSchema: z.any()
+    outputSchema: {
+      data: z.array(z.any()),
+      total_count: z.number(),
+      filtered_count: z.number(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
+      applied_filters: z.record(z.any()),
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
+    }
   },
-   async ({ status, priority, limit = 50 }) => {
+   async ({ status, priority, phase, phase_status, limit = 50 }) => {
     try {
       let query = 'SELECT * FROM tasks WHERE 1=1';
       const params: any[] = [];
@@ -1013,15 +1232,52 @@ server.registerTool(
         params.push(priority);
       }
 
+      if (phase) {
+        if (Array.isArray(phase)) {
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
+          params.push(...phase);
+        } else {
+          query += ' AND phase = ?';
+          params.push(phase);
+        }
+      }
+
+      if (phase_status) {
+        if (Array.isArray(phase_status)) {
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
+          params.push(...phase_status);
+        } else {
+          query += ' AND phase_status = ?';
+          params.push(phase_status);
+        }
+      }
+
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = db.prepare(query);
       const tasks = stmt.all(...params);
 
+      // Calculate phase context
+      const phaseContext = tasks.length > 0 ? {
+        current_phase: tasks[0].phase || 'Not Set',
+        phase_status: tasks[0].phase_status || 'New',
+        active_stakeholders: ['architect', 'developer']
+      } : undefined;
+
+      const appliedFilters: { [key: string]: any } = {};
+      if (status) appliedFilters.status = status;
+      if (priority) appliedFilters.priority = priority;
+      if (phase) appliedFilters.phase = phase;
+      if (phase_status) appliedFilters.phase_status = phase_status;
+
       const output = {
-        tasks,
-        count: tasks.length
+        data: tasks,
+        total_count: tasks.length,
+        filtered_count: tasks.length,
+        phase_context: phaseContext,
+        applied_filters: appliedFilters,
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {

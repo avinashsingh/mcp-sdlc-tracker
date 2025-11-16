@@ -30,6 +30,8 @@ db.exec(`
     current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
     story_points INTEGER,
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     tester_at DATETIME,
@@ -48,6 +50,8 @@ db.exec(`
     assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
     estimated_hours DECIMAL(5,2),
     actual_hours DECIMAL(5,2),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
@@ -66,6 +70,8 @@ db.exec(`
     assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'Open',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     fixed_at DATETIME,
@@ -86,6 +92,8 @@ db.exec(`
     created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+    phase TEXT,
+    phase_status TEXT DEFAULT 'New',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_run_at DATETIME,
@@ -445,6 +453,31 @@ class TrackerTestSuite {
     }
   }
 
+  async testPhaseFunctionality() {
+    try {
+      // Test phase filtering on user stories
+      const userStories = db.prepare('SELECT * FROM user_stories WHERE phase = ?').all('Phase 1');
+      this.assert(userStories.length === 0, 'Should find no user stories with Phase 1 initially');
+
+      // Update a user story with phase
+      const updateStmt = db.prepare('UPDATE user_stories SET phase = ?, phase_status = ? WHERE id = ?');
+      updateStmt.run('Phase 1', 'In Progress', 1);
+
+      // Test phase filtering
+      const phaseStories = db.prepare('SELECT * FROM user_stories WHERE phase = ?').all('Phase 1');
+      this.assert(phaseStories.length === 1, 'Should find 1 user story with Phase 1');
+      this.assert(phaseStories[0].phase_status === 'In Progress', 'Should have correct phase status');
+
+      // Test phase status filtering
+      const statusStories = db.prepare('SELECT * FROM user_stories WHERE phase_status = ?').all('In Progress');
+      this.assert(statusStories.length === 1, 'Should find 1 user story with In Progress phase status');
+
+      this.recordTest('testPhaseFunctionality', true);
+    } catch (error) {
+      this.recordTest('testPhaseFunctionality', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -470,6 +503,7 @@ class TrackerTestSuite {
     // Test advanced features
     await this.testFiltering();
     await this.testForeignKeyConstraints();
+    await this.testPhaseFunctionality();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
