@@ -6,6 +6,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
+- **Comments System**: Stakeholder feedback and collaboration on all entities
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
 - **Audit Trail**: Ownership and status transition tracking
 - **SQLite Backend**: Uses SQLite with better-sqlite3 for efficient operations
@@ -22,15 +23,23 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Task Management
 - `create_tasks`: Create multiple tasks with user story association, time estimates, and architect/developer assignment
+- `list_tasks`: List tasks with optional filtering
+- `update_task_status`: Update task status
 
 ### Bug Tracking
 - `create_bugs`: Create multiple bug reports with severity levels, reporter, and assignee information
+- `list_bugs`: List bugs with optional filtering by status, severity, reporter, assignee
 
 ### Test Case Management
 - `create_test_cases`: Create multiple test cases with preconditions, steps, expected results, and tester/productmanager assignment
+- `list_test_cases`: List test cases with optional filtering by status, assignee
 
 ### Workflow Management
 - `update_entity_status`: Update status of any SDLC entity with audit trail recording
+- `update_task_status`: Update task status
+
+### Comments Support
+- `create_comments`: Create comments on any SDLC entity for stakeholder feedback
 
 ## Resources Available
 
@@ -121,6 +130,14 @@ The server creates a SQLite database file `tracker.db` in the current directory 
 - `created_by/current_owner/assigned_to`: Stakeholder assignments ('tester', 'productmanager')
 - `created_at/updated_at/last_run_at/last_run_by`: Timestamps
 
+#### Comments Table
+- `id`: Primary key (auto-increment)
+- `entity_type`: Type of entity ('epic', 'user_story', 'task', 'bug', 'test_case')
+- `entity_id`: Foreign key to the entity
+- `comment_text`: Comment content (required)
+- `author`: Comment author stakeholder (enum)
+- `created_at/updated_at`: Timestamps
+
 ### Audit Trail Tables
 
 #### Ownership Transitions
@@ -132,6 +149,7 @@ The server creates a SQLite database file `tracker.db` in the current directory 
 ### Indexes
 - Performance indexes on all foreign keys and commonly filtered columns
 - Composite indexes for efficient entity-type queries
+- Comments entity index for fast entity-based filtering
 
 ## SDLC Workflow
 
@@ -150,6 +168,11 @@ The server implements a complete Software Development Lifecycle with proper stak
 - **architect**: Solution architecture
 - **developer**: Development team
 - **tester**: Quality assurance
+
+### Comments System
+- Comments can be added to any SDLC entity by any stakeholder
+- Supports threaded discussions and feedback on requirements, implementations, and issues
+- Maintains full audit trail with author and timestamps
 
 ### Audit Trail
 All ownership and status transitions are recorded in audit tables for complete traceability.
@@ -181,18 +204,23 @@ Once connected to an MCP client, you can:
 ### Task Breakdown
 5. "Create tasks: 'Implement password hashing' (4 hours) and 'Create login UI' (6 hours) for user story 1 assigned to developer"
 6. "List tasks that are in progress"
+7. "Update task 1 status to 'Closed'"
 
 ### Bug Tracking
-7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by qa) and 'Password reset email not sent' (High, reported by product)"
+7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)"
 8. "List all open bugs with high severity"
 
 ### Test Case Creation
 9. "Create test cases: 'Verify user can login successfully' and 'Verify password reset works' for user story 1"
 10. "List test cases that have failed"
 
+### Comments and Collaboration
+11. "Add comment on user story 1: 'Need to ensure security best practices' by architect"
+12. "Add comment on bug 1: 'Validation should check email format' by developer"
+
 ### Workflow Management
-11. "Update user story 1 status to 'In Progress' transitioned by architect"
-12. "Update task 1 status to 'Closed' transitioned by developer"
+13. "Update user story 1 status to 'In Progress' transitioned by architect"
+14. "Update task 1 status to 'Closed' transitioned by developer"
 
 ## Development
 
