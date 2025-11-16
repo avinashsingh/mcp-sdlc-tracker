@@ -75,7 +75,7 @@ This server uses stdio transport, so it can be connected to any MCP-compatible c
 
 ## Database Schema
 
-The server creates a SQLite database file `tracker.db` in the current directory with a complete SDLC schema:
+The server creates a SQLite database file `.project_tracker.db` in the current directory with a complete SDLC schema:
 
 ### Core SDLC Entities
 

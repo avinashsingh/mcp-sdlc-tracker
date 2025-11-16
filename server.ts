@@ -26,7 +26,7 @@ interface ListResponse<T> {
 }
 
 // Initialize SQLite database
-const db = new Database('tracker.db');
+const db = new Database('.project_tracker.db');
 
 // Create tables if they don't exist
 db.exec(`
