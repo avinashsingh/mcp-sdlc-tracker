@@ -222,6 +222,26 @@ Once connected to an MCP client, you can:
 13. "Update user story 1 status to 'In Progress' transitioned by architect"
 14. "Update task 1 status to 'Closed' transitioned by developer"
 
+## Testing
+
+The project includes comprehensive test suites:
+
+### Unit Tests
+```bash
+npm test
+```
+Runs unit tests that directly test database operations and business logic.
+
+### Integration Tests
+```bash
+npm run test:integration
+```
+Runs integration tests that start the MCP server and verify end-to-end functionality including:
+- Server startup and connectivity
+- Database operations (create, read, update)
+- Server stability
+- Proper cleanup
+
 ## Development
 
 The server is written in TypeScript and uses:

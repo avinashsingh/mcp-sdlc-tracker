@@ -147,8 +147,8 @@ db.exec(`
 
   -- Transition audit indexes
   CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
-  CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
-`);
+   CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
+ `);
 
 
 
@@ -183,6 +183,7 @@ server.registerTool(
     }
   },
   async ({ epics }) => {
+    console.error('create_epics called with:', JSON.stringify(epics, null, 2));
     try {
       const stmt = db.prepare(`
         INSERT INTO epics (title, description, assigned_to)
@@ -214,11 +215,13 @@ server.registerTool(
         total_created: successful.length
       };
 
+      console.error('create_epics returning:', JSON.stringify(output, null, 2));
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output
       };
     } catch (error) {
+      console.error('create_epics error:', error.message);
       return {
         content: [{ type: 'text', text: `Error creating epics: ${error.message}` }],
         isError: true
@@ -240,27 +243,70 @@ server.registerTool(
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
         story_points: z.number().optional(),
-     assigned_to: z.string().optional()
-     })).min(1, 'At least one user story is required')
-     },
-
+        assigned_to: z.string().optional()
+      })).min(1, 'At least one user story is required')
+    },
     outputSchema: {
       user_stories_created: z.array(z.object({
-        user_story_id: z.number().nullable(),
+        user_story_id: z.number(),
         title: z.string(),
-        success: z.boolean(),
-        error: z.string().optional()
+        success: z.boolean()
       })),
       total_created: z.number()
     }
   },
+  async ({ user_stories }) => {
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
 
-   async ({ user_stories }) => {
-    return {
-      content: [{ type: 'text', text: 'User stories created' }]
-    };
-   }
- );
+      const results: { user_story_id: number | null; title: string; success: boolean; error?: string }[] = [];
+      for (const userStory of user_stories) {
+        try {
+          const result = stmt.run(
+            userStory.epic_id || null,
+            userStory.title,
+            userStory.description || null,
+            userStory.acceptance_criteria || null,
+            userStory.story_points || null,
+            userStory.assigned_to || null,
+            'productmanager'
+          );
+          results.push({
+            user_story_id: result.lastInsertRowid as number,
+            title: userStory.title,
+            success: true
+          });
+        } catch (error) {
+          results.push({
+            user_story_id: null,
+            title: userStory.title,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      const successful = results.filter(r => r.success);
+      const output = {
+        user_stories_created: successful,
+        total_created: successful.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating user stories: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
  
 // Tool: Create Tasks
 server.registerTool(
@@ -1051,8 +1097,11 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
+  console.error('MCP server connected and ready');
+
   // Handle graceful shutdown
   process.on('SIGINT', () => {
+    console.error('Shutting down MCP server');
     db.close();
     process.exit(0);
   });
