@@ -25,171 +25,17 @@ interface ListResponse<T> {
   pagination?: { limit: number; offset: number; has_more: boolean };
 }
 
-// Initialize SQLite database
-const db = new Database('.project_tracker.db');
+// Database initialization state
+let db: Database | null = null;
+let dbPath: string | null = null;
+let isInitialized = false;
 
-// Create tables if they don't exist
-db.exec(`
-  -- Core SDLC Entities
-  CREATE TABLE IF NOT EXISTS epics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
-    created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to = 'productmanager'),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    closed_at DATETIME
-  );
-
-  CREATE TABLE IF NOT EXISTS user_stories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    epic_id INTEGER,
-    title TEXT NOT NULL,
-    description TEXT,
-    acceptance_criteria TEXT,
-    status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
-    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
-    story_points INTEGER,
-    phase TEXT,
-    phase_status TEXT DEFAULT 'New',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    tester_at DATETIME,
-    closed_at DATETIME,
-    FOREIGN KEY (epic_id) REFERENCES epics(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_story_id INTEGER,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Closed')),
-    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
-    estimated_hours DECIMAL(5,2),
-    actual_hours DECIMAL(5,2),
-    phase TEXT,
-    phase_status TEXT DEFAULT 'New',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    closed_at DATETIME,
-    FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS bugs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_story_id INTEGER,
-    task_id INTEGER,
-    title TEXT NOT NULL,
-    description TEXT,
-    severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
-    status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
-    reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    phase TEXT,
-    phase_status TEXT DEFAULT 'Open',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    fixed_at DATETIME,
-    closed_at DATETIME,
-    FOREIGN KEY (user_story_id) REFERENCES user_stories(id),
-    FOREIGN KEY (task_id) REFERENCES tasks(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS test_cases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_story_id INTEGER,
-    title TEXT NOT NULL,
-    description TEXT,
-    preconditions TEXT,
-    steps TEXT NOT NULL,
-    expected_result TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
-    created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
-    phase TEXT,
-    phase_status TEXT DEFAULT 'New',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_run_at DATETIME,
-    last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-  );
-
-   CREATE TABLE IF NOT EXISTS comments (
-     id INTEGER PRIMARY KEY AUTOINCREMENT,
-     entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-     entity_id INTEGER NOT NULL,
-     comment_text TEXT NOT NULL,
-     author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-   );
-
-  -- Supporting Tables for Audit Trail
-  CREATE TABLE IF NOT EXISTS ownership_transitions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-    entity_id INTEGER NOT NULL,
-    from_owner TEXT CHECK (from_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    to_owner TEXT NOT NULL CHECK (to_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
-  );
-
-  CREATE TABLE IF NOT EXISTS status_transitions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-    entity_id INTEGER NOT NULL,
-    from_status TEXT,
-    to_status TEXT NOT NULL,
-    transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
-  );
-
-
-`);
-
-// Create indexes for performance
-db.exec(`
-  -- Core entity indexes
-  CREATE INDEX IF NOT EXISTS idx_epics_status ON epics(status);
-  CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
-  CREATE INDEX IF NOT EXISTS idx_user_stories_status ON user_stories(status);
-  CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
-  CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-  CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
-  CREATE INDEX IF NOT EXISTS idx_bugs_task_id ON bugs(task_id);
-  CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
-  CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
-  CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
-  CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
-
-  -- Phase tracking indexes
-  CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
-  CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
-  CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
-  CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
-  CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
-  CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
-  CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
-  CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
-
-  -- Transition audit indexes
-  CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
-   CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
- `);
-
+function getDatabase(): Database {
+  if (!isInitialized || !db) {
+    throw new Error(`Database not initialized. Please run 'initialize' command first with project directory path.`);
+  }
+  return db;
+}
 
 
 // Create MCP server
@@ -199,6 +45,221 @@ const server = new McpServer({
 });
 
 // SDLC Entity Management Tools
+
+// Tool: Initialize Database
+server.registerTool(
+  'initialize',
+  {
+    title: 'Initialize Database',
+    description: 'Initialize the SDLC tracker database in the current project directory',
+    inputSchema: {
+      // No parameters - uses current directory automatically
+    },
+    outputSchema: {
+      success: z.boolean(),
+      message: z.string(),
+      database_path: z.string()
+    }
+  },
+  async () => {
+    try {
+      const projectDir = process.cwd();
+      const dbFilePath = `${projectDir}/.project_tracker.db`;
+
+      // Check if already initialized
+      if (isInitialized) {
+        return {
+          content: [{ type: 'text', text: 'Database already initialized' }],
+          structuredContent: {
+            success: false,
+            message: 'Database already initialized',
+            database_path: dbPath!
+          }
+        };
+      }
+
+      // Initialize database
+      db = new Database(dbFilePath);
+      dbPath = dbFilePath;
+
+      // Execute all CREATE TABLE statements
+      db.exec(`
+        -- Core SDLC Entities
+        CREATE TABLE IF NOT EXISTS epics (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
+          created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to = 'productmanager'),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          closed_at DATETIME
+        );
+
+        CREATE TABLE IF NOT EXISTS user_stories (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          epic_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          acceptance_criteria TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
+          story_points INTEGER,
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          tester_at DATETIME,
+          closed_at DATETIME,
+          FOREIGN KEY (epic_id) REFERENCES epics(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Closed')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
+          estimated_hours DECIMAL(5,2),
+          actual_hours DECIMAL(5,2),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          closed_at DATETIME,
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS bugs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          task_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
+          status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
+          reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'Open',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          fixed_at DATETIME,
+          closed_at DATETIME,
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id),
+          FOREIGN KEY (task_id) REFERENCES tasks(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS test_cases (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          preconditions TEXT,
+          steps TEXT NOT NULL,
+          expected_result TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
+          created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          last_run_at DATETIME,
+          last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          comment_text TEXT NOT NULL,
+          author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Supporting Tables for Audit Trail
+        CREATE TABLE IF NOT EXISTS ownership_transitions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          from_owner TEXT CHECK (from_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          to_owner TEXT NOT NULL CHECK (to_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
+        );
+
+        CREATE TABLE IF NOT EXISTS status_transitions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          from_status TEXT,
+          to_status TEXT NOT NULL,
+          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
+        );
+      `);
+
+      // Create indexes for performance
+      db.exec(`
+        -- Core entity indexes
+        CREATE INDEX IF NOT EXISTS idx_epics_status ON epics(status);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_status ON user_stories(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_bugs_task_id ON bugs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
+        CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
+
+        -- Transition audit indexes
+        CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
+
+        -- Phase tracking indexes
+        CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+        CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
+        CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
+      `);
+
+      isInitialized = true;
+
+      return {
+        content: [{ type: 'text', text: 'Database initialized successfully' }],
+        structuredContent: {
+          success: true,
+          message: 'Database initialized successfully',
+          database_path: dbFilePath
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to initialize database: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
 
 // Tool: Create Epics
 server.registerTool(
@@ -225,7 +286,8 @@ server.registerTool(
   async ({ epics }) => {
     console.error('create_epics called with:', JSON.stringify(epics, null, 2));
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         INSERT INTO epics (title, description, assigned_to)
         VALUES (?, ?, ?)
       `);
@@ -297,7 +359,8 @@ server.registerTool(
   },
   async ({ user_stories }) => {
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
@@ -375,7 +438,8 @@ server.registerTool(
   },
    async ({ tasks }) => {
      try {
-       const stmt = db.prepare(`
+       const database = getDatabase();
+      const stmt = database.prepare(`
          INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, created_by)
          VALUES (?, ?, ?, ?, ?, ?)
        `);
@@ -454,7 +518,8 @@ server.registerTool(
   },
   async ({ bugs }) => {
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
@@ -526,7 +591,8 @@ server.registerTool(
   },
   async ({ test_cases }) => {
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
@@ -604,7 +670,8 @@ server.registerTool(
   },
   async ({ comments }) => {
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         INSERT INTO comments (entity_type, entity_id, comment_text, author)
         VALUES (?, ?, ?, ?)
       `);
@@ -620,7 +687,7 @@ server.registerTool(
             bug: 'bugs',
             test_case: 'test_cases'
           }[comment.entity_type];
-          const entityCheck = db.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
+          const entityCheck = database.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
           if (!entityCheck) {
             results.push({
               comment_id: undefined,
@@ -694,6 +761,7 @@ server.registerTool(
   },
   async ({ status, limit = 50 }) => {
     try {
+      const database = getDatabase();
       let query = 'SELECT * FROM epics WHERE 1=1';
       const params: any[] = [];
 
@@ -705,7 +773,7 @@ server.registerTool(
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
-      const stmt = db.prepare(query);
+      const stmt = database.prepare(query);
       const epics = stmt.all(...params);
 
       const output = {
@@ -773,6 +841,7 @@ server.registerTool(
   },
   async ({ epic_id, status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
+      const database = getDatabase();
       let query = 'SELECT * FROM user_stories WHERE 1=1';
       const params: any[] = [];
 
@@ -814,7 +883,7 @@ server.registerTool(
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
-      const stmt = db.prepare(query);
+      const stmt = database.prepare(query);
       const user_stories = stmt.all(...params);
 
       // Calculate phase context
@@ -901,6 +970,7 @@ server.registerTool(
   },
   async ({ status, severity, reported_by, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
+      const database = getDatabase();
       let query = 'SELECT * FROM bugs WHERE 1=1';
       const params: any[] = [];
 
@@ -947,7 +1017,7 @@ server.registerTool(
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
-      const stmt = db.prepare(query);
+      const stmt = database.prepare(query);
       const bugs = stmt.all(...params);
 
       // Calculate phase context
@@ -1030,6 +1100,7 @@ server.registerTool(
   },
   async ({ status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
+      const database = getDatabase();
       let query = 'SELECT * FROM test_cases WHERE 1=1';
       const params: any[] = [];
 
@@ -1066,7 +1137,7 @@ server.registerTool(
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
-      const stmt = db.prepare(query);
+      const stmt = database.prepare(query);
       const test_cases = stmt.all(...params);
 
       // Calculate phase context
@@ -1134,7 +1205,8 @@ server.registerTool(
         test_case: 'test_cases'
       }[entity_type];
       // Get current status
-      const currentStmt = db.prepare(`SELECT status FROM ${tableName} WHERE id = ?`);
+      const database = getDatabase();
+      const currentStmt = database.prepare(`SELECT status FROM ${tableName} WHERE id = ?`);
       const current = currentStmt.get(entity_id) as { status: string } | undefined;
 
       if (!current) {
@@ -1145,7 +1217,7 @@ server.registerTool(
       }
 
       // Update status
-      const updateStmt = db.prepare(`
+      const updateStmt = database.prepare(`
         UPDATE ${tableName}
         SET status = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1160,7 +1232,7 @@ server.registerTool(
       }
 
       // Record status transition
-      const transitionStmt = db.prepare(`
+      const transitionStmt = database.prepare(`
         INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
         VALUES (?, ?, ?, ?, ?)
       `);
@@ -1219,6 +1291,7 @@ server.registerTool(
   },
    async ({ status, priority, phase, phase_status, limit = 50 }) => {
     try {
+      const database = getDatabase();
       let query = 'SELECT * FROM tasks WHERE 1=1';
       const params: any[] = [];
 
@@ -1255,7 +1328,7 @@ server.registerTool(
       query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
-      const stmt = db.prepare(query);
+      const stmt = database.prepare(query);
       const tasks = stmt.all(...params);
 
       // Calculate phase context
@@ -1310,7 +1383,8 @@ server.registerTool(
   },
   async ({ task_id, status }) => {
     try {
-      const stmt = db.prepare(`
+      const database = getDatabase();
+      const stmt = database.prepare(`
         UPDATE tasks
         SET status = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1350,6 +1424,184 @@ server.registerTool(
 
 // Connect to stdio transport
 async function main() {
+  // Auto-initialize database if not already initialized
+  if (!isInitialized) {
+    console.error('Auto-initializing database...');
+    try {
+      const projectDir = process.cwd();
+      const dbFilePath = `${projectDir}/.project_tracker.db`;
+
+      db = new Database(dbFilePath);
+      dbPath = dbFilePath;
+
+      // Execute all CREATE TABLE statements
+      db.exec(`
+        -- Core SDLC Entities
+        CREATE TABLE IF NOT EXISTS epics (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
+          created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to = 'productmanager'),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          closed_at DATETIME
+        );
+
+        CREATE TABLE IF NOT EXISTS user_stories (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          epic_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          acceptance_criteria TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
+          story_points INTEGER,
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          tester_at DATETIME,
+          closed_at DATETIME,
+          FOREIGN KEY (epic_id) REFERENCES epics(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Closed')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
+          estimated_hours DECIMAL(5,2),
+          actual_hours DECIMAL(5,2),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          closed_at DATETIME,
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS bugs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          task_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
+          status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
+          reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'Open',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          fixed_at DATETIME,
+          closed_at DATETIME,
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id),
+          FOREIGN KEY (task_id) REFERENCES tasks(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS test_cases (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_story_id INTEGER,
+          title TEXT NOT NULL,
+          description TEXT,
+          preconditions TEXT,
+          steps TEXT NOT NULL,
+          expected_result TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
+          created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+          phase TEXT,
+          phase_status TEXT DEFAULT 'New',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          last_run_at DATETIME,
+          last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          comment_text TEXT NOT NULL,
+          author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Supporting Tables for Audit Trail
+        CREATE TABLE IF NOT EXISTS ownership_transitions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          from_owner TEXT CHECK (from_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          to_owner TEXT NOT NULL CHECK (to_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
+        );
+
+        CREATE TABLE IF NOT EXISTS status_transitions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          from_status TEXT,
+          to_status TEXT NOT NULL,
+          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
+        );
+      `);
+
+      // Create indexes for performance
+      db.exec(`
+        -- Core entity indexes
+        CREATE INDEX IF NOT EXISTS idx_epics_status ON epics(status);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_status ON user_stories(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_bugs_task_id ON bugs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
+        CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
+
+        -- Transition audit indexes
+        CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
+
+        -- Phase tracking indexes
+        CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
+        CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+        CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
+        CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
+        CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
+      `);
+
+      isInitialized = true;
+      console.error('Database auto-initialized successfully');
+    } catch (error) {
+      console.error('Failed to auto-initialize database:', error);
+      process.exit(1);
+    }
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
