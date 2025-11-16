@@ -388,6 +388,58 @@ class MCPIntegrationTester {
     }
   }
 
+  async callInitialize(): Promise<void> {
+    console.log('🔧 Initializing database via MCP...');
+
+    const request: MCPRequest = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'initialize',
+        arguments: {}
+      }
+    };
+
+    return new Promise((resolve, reject) => {
+      const requestStr = JSON.stringify(request) + '\n';
+      this.serverProcess.stdin.write(requestStr);
+
+      let responseData = '';
+
+      const onData = (data: Buffer) => {
+        responseData += data.toString();
+        const lines = responseData.split('\n');
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const response = JSON.parse(line);
+              if (response.id === 1) {
+                this.serverProcess.stdout.off('data', onData);
+                if (response.error) {
+                  reject(new Error(`Initialize failed: ${response.error.message}`));
+                } else {
+                  console.log('✅ Database initialized successfully');
+                  resolve();
+                }
+                return;
+              }
+            } catch (e) {
+              // Not valid JSON or not the response yet
+            }
+          }
+        }
+      };
+
+      this.serverProcess.stdout.on('data', onData);
+
+      setTimeout(() => {
+        this.serverProcess.stdout.off('data', onData);
+        reject(new Error('Timeout waiting for initialize response'));
+      }, 10000);
+    });
+  }
+
   async runAllTests(): Promise<{ passed: number; total: number; results: any[] }> {
     console.log('🧪 Starting MCP Integration Test Suite...\n');
 
@@ -403,8 +455,11 @@ class MCPIntegrationTester {
     let total = 0;
 
     try {
-      // Start server first (this will create a fresh database)
+      // Start server first
       await this.startServer();
+
+      // Initialize the database via MCP
+      await this.callInitialize();
 
       // Test 1: Server connectivity
       total++;
