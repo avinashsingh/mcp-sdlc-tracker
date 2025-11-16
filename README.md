@@ -13,6 +13,9 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ## Tools Available
 
+### Database Management
+- `initialize`: Initialize the SDLC tracker database in the specified project directory. You must provide your current working directory path (e.g., "/Users/username/project").
+
 ### Epic Management
 - `create_epics`: Create multiple epics with title, description, and productmanager assignment
 - `list_epics`: List epics with optional status filtering
@@ -65,6 +68,13 @@ Or for development with auto-restart:
 npm run dev
 ```
 
+### Initializing the Database
+
+Before using any other tools, you must initialize the database:
+
+1. Call the `initialize` tool and provide your current working directory path (e.g., "/Users/username/project")
+2. The tool will create `.project_tracker.db` in that directory and set up all necessary tables
+
 ### Connecting to MCP Clients
 
 This server uses stdio transport, so it can be connected to any MCP-compatible client such as:
@@ -75,7 +85,7 @@ This server uses stdio transport, so it can be connected to any MCP-compatible c
 
 ## Database Schema
 
-The server creates a SQLite database file `.project_tracker.db` in the current directory with a complete SDLC schema:
+The `initialize` tool creates a SQLite database file `.project_tracker.db` in the specified directory with a complete SDLC schema:
 
 ### Core SDLC Entities
 
@@ -179,19 +189,14 @@ All ownership and status transitions are recorded in audit tables for complete t
 
 ## Project Folder Access
 
-**Can the MCP server get the current project folder?**
-
-No, the MCP server cannot directly access the client's current working directory because it runs as a separate process communicating via stdio. However:
-
-- **Solution**: Tools can accept a `project_path` parameter that the MCP client can provide
-- **Usage**: The client (like Claude Code or Cursor) can pass the current directory path to tools when needed
-- **Example**: `create_task` accepts an optional `project_path` parameter for context
-
-This design maintains security by keeping the server and client processes separate while allowing context sharing when needed.
+The MCP server requires explicit initialization with the project directory path for security reasons. The `initialize` tool must be called first with your current working directory path before any other tools can be used.
 
 ## Example Usage
 
 Once connected to an MCP client, you can:
+
+### Database Initialization
+1. "Initialize the database with path '/Users/username/my-project'"
 
 ### Epic Management
 1. "Create epics: 'User Authentication System' and 'Payment Processing'"
@@ -236,8 +241,9 @@ Runs unit tests that directly test database operations and business logic.
 ```bash
 npm run test:integration
 ```
-Runs integration tests that start the MCP server and verify end-to-end functionality including:
+Runs integration tests that start the MCP server, initialize the database, and verify end-to-end functionality including:
 - Server startup and connectivity
+- Database initialization via MCP
 - Database operations (create, read, update)
 - Server stability
 - Proper cleanup
