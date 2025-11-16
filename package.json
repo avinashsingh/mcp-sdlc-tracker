@@ -9,7 +9,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["mcp", "sqlite", "tracker", "tasks", "projects"],
-  "author": "",
+  "author": "Avinash Singh",
   "license": "ISC",
   "type": "module",
   "dependencies": {
