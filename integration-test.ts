@@ -397,7 +397,9 @@ class MCPIntegrationTester {
       method: 'tools/call',
       params: {
         name: 'initialize',
-        arguments: {}
+        arguments: {
+          path: process.cwd()
+        }
       }
     };
 

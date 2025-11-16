@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import Database from 'better-sqlite3';
 import { z } from 'zod';
+import { existsSync, statSync } from 'fs';
 
 // Enhanced Universal Filters Interface
 interface UniversalFilters {
@@ -51,9 +52,9 @@ server.registerTool(
   'initialize',
   {
     title: 'Initialize Database',
-    description: 'Initialize the SDLC tracker database in the current project directory',
+    description: 'Initialize the SDLC tracker database in the specified project directory. You must provide your current working directory path (e.g., "/Users/username/project").',
     inputSchema: {
-      // No parameters - uses current directory automatically
+      path: z.string().min(1, "Path is required. Provide your current working directory path.")
     },
     outputSchema: {
       success: z.boolean(),
@@ -61,9 +62,22 @@ server.registerTool(
       database_path: z.string()
     }
   },
-  async () => {
+  async ({ path }) => {
     try {
-      const projectDir = process.cwd();
+      // Validate the path
+      if (!existsSync(path)) {
+        throw new Error(`Path does not exist: ${path}`);
+      }
+      const stat = statSync(path);
+      if (!stat.isDirectory()) {
+        throw new Error(`Path is not a directory: ${path}`);
+      }
+      // Basic security check: prevent path traversal
+      if (path.includes('..') || path.includes('\0')) {
+        throw new Error(`Invalid path: ${path}`);
+      }
+
+      const projectDir = path;
       const dbFilePath = `${projectDir}/.project_tracker.db`;
 
       // Check if already initialized
