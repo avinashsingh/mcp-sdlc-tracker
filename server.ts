@@ -96,6 +96,16 @@ db.exec(`
     FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
   );
 
+  CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+    entity_id INTEGER NOT NULL,
+    comment_text TEXT NOT NULL,
+    author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   -- Supporting Tables for Audit Trail
   CREATE TABLE IF NOT EXISTS ownership_transitions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +143,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
   CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
   CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
+  CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
 
   -- Transition audit indexes
   CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
@@ -524,6 +535,91 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error creating test cases: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Comments
+server.registerTool(
+  'create_comments',
+  {
+    title: 'Create Comments',
+    description: 'Create multiple comments on SDLC entities for stakeholder feedback',
+    inputSchema: {
+      comments: z.array(z.object({
+        entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
+        entity_id: z.number(),
+        comment_text: z.string().min(1, 'Comment text is required'),
+        author: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+      })).min(1, 'At least one comment is required')
+    },
+    outputSchema: {
+      comments_created: z.array(z.object({
+        comment_id: z.number(),
+        entity_type: z.string(),
+        entity_id: z.number(),
+        success: z.boolean(),
+        error: z.string().optional()
+      })),
+      total_created: z.number()
+    }
+  },
+  async ({ comments }) => {
+    try {
+      const stmt = db.prepare(`
+        INSERT INTO comments (entity_type, entity_id, comment_text, author)
+        VALUES (?, ?, ?, ?)
+      `);
+
+      const results: { comment_id: number | null; entity_type: string; entity_id: number; success: boolean; error?: string }[] = [];
+      for (const comment of comments) {
+        try {
+          // Check if entity exists
+          const entityCheck = db.prepare(`SELECT id FROM ${comment.entity_type}s WHERE id = ?`).get(comment.entity_id);
+          if (!entityCheck) {
+            results.push({
+              comment_id: null,
+              entity_type: comment.entity_type,
+              entity_id: comment.entity_id,
+              success: false,
+              error: `${comment.entity_type} with id ${comment.entity_id} not found`
+            });
+            continue;
+          }
+
+          const result = stmt.run(comment.entity_type, comment.entity_id, comment.comment_text, comment.author);
+          results.push({
+            comment_id: result.lastInsertRowid as number,
+            entity_type: comment.entity_type,
+            entity_id: comment.entity_id,
+            success: true
+          });
+        } catch (error) {
+          results.push({
+            comment_id: null,
+            entity_type: comment.entity_type,
+            entity_id: comment.entity_id,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      const successful = results.filter(r => r.success);
+      const output = {
+        comments_created: results,
+        total_created: successful.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating comments: ${error.message}` }],
         isError: true
       };
     }
