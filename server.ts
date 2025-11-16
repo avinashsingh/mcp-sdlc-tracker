@@ -96,15 +96,15 @@ db.exec(`
     FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
   );
 
-  CREATE TABLE IF NOT EXISTS comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK (entity_type IN ("epic", "user_story", "task", "bug", "test_case")),
-    entity_id INTEGER NOT NULL,
-    comment_text TEXT NOT NULL,
-    author TEXT NOT NULL CHECK (author IN ("productmanager", "programmanager", "developer", "tester", "architect")),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+   CREATE TABLE IF NOT EXISTS comments (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+     entity_id INTEGER NOT NULL,
+     comment_text TEXT NOT NULL,
+     author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+   );
 
   -- Supporting Tables for Audit Trail
   CREATE TABLE IF NOT EXISTS ownership_transitions (
