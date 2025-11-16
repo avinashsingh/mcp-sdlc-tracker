@@ -157,7 +157,7 @@ The server implements a complete Software Development Lifecycle with proper stak
 
 ### Entity States & Transitions
 - **Epics**: New → Open → Closed (owned by productmanager)
-- **User Stories**: New → In Progress → QA → Closed (productmanager → architect → developer → tester → productmanager)
+- **User Stories**: New → In Progress → QA → UAT → Closed (productmanager → architect → developer → tester → productmanager)
 - **Tasks**: New → In Progress → Closed (architect → developer → architect)
 - **Bugs**: Open → In Progress → Fixed → Closed (any stakeholder can be involved)
 - **Test Cases**: New, Passed, Failed (tester → productmanager → tester)
