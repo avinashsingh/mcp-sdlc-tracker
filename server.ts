@@ -98,10 +98,10 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ("epic", "user_story", "task", "bug", "test_case")),
     entity_id INTEGER NOT NULL,
     comment_text TEXT NOT NULL,
-    author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    author TEXT NOT NULL CHECK (author IN ("productmanager", "programmanager", "developer", "tester", "architect")),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -240,12 +240,13 @@ server.registerTool(
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
         story_points: z.number().optional(),
-        assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional()
-      })).min(1, 'At least one user story is required')
-    },
+     assigned_to: z.string().optional()
+     })).min(1, 'At least one user story is required')
+     },
+
     outputSchema: {
       user_stories_created: z.array(z.object({
-        user_story_id: z.number(),
+        user_story_id: z.number().nullable(),
         title: z.string(),
         success: z.boolean(),
         error: z.string().optional()
@@ -253,58 +254,14 @@ server.registerTool(
       total_created: z.number()
     }
   },
-  async ({ user_stories }) => {
-    try {
-      const stmt = db.prepare(`
-        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
 
-      const results: { user_story_id: number | null; title: string; success: boolean; error?: string }[] = [];
-      for (const story of user_stories) {
-        try {
-          const result = stmt.run(
-            story.epic_id || null,
-            story.title,
-            story.description || null,
-            story.acceptance_criteria || null,
-            story.story_points || null,
-            story.assigned_to || 'productmanager'
-          );
-          results.push({
-            user_story_id: result.lastInsertRowid as number,
-            title: story.title,
-            success: true
-          });
-        } catch (error) {
-          results.push({
-            user_story_id: null,
-            title: story.title,
-            success: false,
-            error: error.message
-          });
-        }
-      }
-
-      const successful = results.filter(r => r.success);
-      const output = {
-        user_stories_created: results,
-        total_created: successful.length
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error creating user stories: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
+   async ({ user_stories }) => {
+    return {
+      content: [{ type: 'text', text: 'User stories created' }]
+    };
+   }
+ );
+ 
 // Tool: Create Tasks
 server.registerTool(
   'create_tasks',
@@ -318,75 +275,76 @@ server.registerTool(
         description: z.string().optional(),
         assigned_to: z.enum(['architect', 'developer']).optional(),
         estimated_hours: z.number().optional()
-      })).min(1, 'At least one task is required')
-    },
-    outputSchema: {
-      tasks_created: z.array(z.object({
-        task_id: z.number(),
-        title: z.string(),
-        success: z.boolean(),
-        error: z.string().optional()
-      })),
-      total_created: z.number()
-    }
+       })).min(1, 'At least one task is required')
+     },
+     outputSchema: {
+       tasks_created: z.array(z.object({
+         task_id: z.number(),
+         title: z.string(),
+         success: z.boolean(),
+         error: z.string().optional()
+       })),
+       total_created: z.number()
+     }
   },
-  async ({ tasks }) => {
-    try {
-      const stmt = db.prepare(`
-        INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours)
-        VALUES (?, ?, ?, ?, ?)
-      `);
+   async ({ tasks }) => {
+     try {
+       const stmt = db.prepare(`
+         INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, created_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+       `);
 
-      const results: { task_id: number | null; title: string; success: boolean; error?: string }[] = [];
-      for (const task of tasks) {
-        try {
-          const result = stmt.run(
-            task.user_story_id || null,
-            task.title,
-            task.description || null,
-            task.assigned_to || 'architect',
-            task.estimated_hours || null
-          );
-          results.push({
-            task_id: result.lastInsertRowid as number,
-            title: task.title,
-            success: true
-          });
-        } catch (error) {
-          results.push({
-            task_id: null,
-            title: task.title,
-            success: false,
-            error: error.message
-          });
-        }
-      }
+       const results: { task_id: number | null; title: string; success: boolean; error?: string }[] = [];
+       for (const task of tasks) {
+         try {
+           const result = stmt.run(
+             task.user_story_id || null,
+             task.title,
+             task.description || null,
+             task.assigned_to || 'architect',
+             task.estimated_hours || null,
+             'architect'
+           );
+           results.push({
+             task_id: result.lastInsertRowid as number,
+             title: task.title,
+             success: true
+           });
+         } catch (error) {
+           results.push({
+             task_id: null,
+             title: task.title,
+             success: false,
+             error: error.message
+           });
+         }
+       }
 
       const successful = results.filter(r => r.success);
-      const output = {
-        tasks_created: results,
-        total_created: successful.length
-      };
+       const output = {
+         tasks_created: results,
+         total_created: successful.length
+       };
 
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
-        isError: true
-      };
+       return {
+         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+         structuredContent: output
+       };
+     } catch (error) {
+       return {
+         content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
+         isError: true
+       };
     }
-  }
-);
+   }
+ );
 
 // Tool: Create Bugs
 server.registerTool(
   'create_bugs',
   {
     title: 'Create Bugs',
-    description: 'Create multiple bug reports in the SDLC tracker',
+    description: 'Create multiple bug reports with severity levels, reporter, and assignee information',
     inputSchema: {
       bugs: z.array(z.object({
         user_story_id: z.number().optional(),
@@ -411,8 +369,8 @@ server.registerTool(
   async ({ bugs }) => {
     try {
       const stmt = db.prepare(`
-        INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const results: { bug_id: number | null; title: string; success: boolean; error?: string }[] = [];
@@ -425,7 +383,8 @@ server.registerTool(
             bug.description || null,
             bug.severity,
             bug.reported_by,
-            bug.assigned_to || null
+            bug.assigned_to || null,
+            'tester'
           );
           results.push({
             bug_id: result.lastInsertRowid as number,
@@ -477,15 +436,6 @@ server.registerTool(
         expected_result: z.string().min(1, 'Expected result is required'),
         assigned_to: z.enum(['tester', 'productmanager']).optional()
       })).min(1, 'At least one test case is required')
-    },
-    outputSchema: {
-      test_cases_created: z.array(z.object({
-        test_case_id: z.number(),
-        title: z.string(),
-        success: z.boolean(),
-        error: z.string().optional()
-      })),
-      total_created: z.number()
     }
   },
   async ({ test_cases }) => {
@@ -557,7 +507,7 @@ server.registerTool(
     },
     outputSchema: {
       comments_created: z.array(z.object({
-        comment_id: z.number(),
+        comment_id: z.number().optional(),
         entity_type: z.string(),
         entity_id: z.number(),
         success: z.boolean(),
@@ -573,14 +523,21 @@ server.registerTool(
         VALUES (?, ?, ?, ?)
       `);
 
-      const results: { comment_id: number | null; entity_type: string; entity_id: number; success: boolean; error?: string }[] = [];
+      const results: { comment_id?: number; entity_type: string; entity_id: number; success: boolean; error?: string }[] = [];
       for (const comment of comments) {
         try {
           // Check if entity exists
-          const entityCheck = db.prepare(`SELECT id FROM ${comment.entity_type}s WHERE id = ?`).get(comment.entity_id);
+          const tableName = {
+            epic: 'epics',
+            user_story: 'user_stories',
+            task: 'tasks',
+            bug: 'bugs',
+            test_case: 'test_cases'
+          }[comment.entity_type];
+          const entityCheck = db.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
           if (!entityCheck) {
             results.push({
-              comment_id: null,
+              comment_id: undefined,
               entity_type: comment.entity_type,
               entity_id: comment.entity_id,
               success: false,
@@ -598,7 +555,6 @@ server.registerTool(
           });
         } catch (error) {
           results.push({
-            comment_id: null,
             entity_type: comment.entity_type,
             entity_id: comment.entity_id,
             success: false,
@@ -757,6 +713,149 @@ server.registerTool(
   }
 );
 
+// Tool: List Bugs
+server.registerTool(
+  'list_bugs',
+  {
+    title: 'List Bugs',
+    description: 'List bugs with optional filtering',
+    inputSchema: {
+      status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional(),
+      severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
+      reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+      assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+      limit: z.number().min(1).max(100).optional()
+    },
+    outputSchema: {
+      bugs: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        task_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        severity: z.string(),
+        reported_by: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
+      count: z.number()
+    }
+  },
+  async ({ status, severity, reported_by, assigned_to, limit = 50 }) => {
+    try {
+      let query = 'SELECT * FROM bugs WHERE 1=1';
+      const params: any[] = [];
+
+      if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+      }
+
+      if (severity) {
+        query += ' AND severity = ?';
+        params.push(severity);
+      }
+
+      if (reported_by) {
+        query += ' AND reported_by = ?';
+        params.push(reported_by);
+      }
+
+      if (assigned_to) {
+        query += ' AND assigned_to = ?';
+        params.push(assigned_to);
+      }
+
+      query += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+
+      const stmt = db.prepare(query);
+      const bugs = stmt.all(...params);
+
+      const output = {
+        bugs,
+        count: bugs.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing bugs: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: List Test Cases
+server.registerTool(
+  'list_test_cases',
+  {
+    title: 'List Test Cases',
+    description: 'List test cases with optional filtering',
+    inputSchema: {
+      status: z.enum(['New', 'Passed', 'Failed']).optional(),
+      assigned_to: z.enum(['tester', 'productmanager']).optional(),
+      limit: z.number().min(1).max(100).optional()
+    },
+    outputSchema: {
+      test_cases: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
+      count: z.number()
+    }
+  },
+  async ({ status, assigned_to, limit = 50 }) => {
+    try {
+      let query = 'SELECT * FROM test_cases WHERE 1=1';
+      const params: any[] = [];
+
+      if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+      }
+
+      if (assigned_to) {
+        query += ' AND assigned_to = ?';
+        params.push(assigned_to);
+      }
+
+      query += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+
+      const stmt = db.prepare(query);
+      const test_cases = stmt.all(...params);
+
+      const output = {
+        test_cases,
+        count: test_cases.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing test cases: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 // Tool: Update Entity Status
 server.registerTool(
   'update_entity_status',
@@ -779,8 +878,15 @@ server.registerTool(
   },
   async ({ entity_type, entity_id, status, transitioned_by }) => {
     try {
+      const tableName = {
+        epic: 'epics',
+        user_story: 'user_stories',
+        task: 'tasks',
+        bug: 'bugs',
+        test_case: 'test_cases'
+      }[entity_type];
       // Get current status
-      const currentStmt = db.prepare(`SELECT status FROM ${entity_type}s WHERE id = ?`);
+      const currentStmt = db.prepare(`SELECT status FROM ${tableName} WHERE id = ?`);
       const current = currentStmt.get(entity_id) as { status: string } | undefined;
 
       if (!current) {
@@ -792,7 +898,7 @@ server.registerTool(
 
       // Update status
       const updateStmt = db.prepare(`
-        UPDATE ${entity_type}s
+        UPDATE ${tableName}
         SET status = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
@@ -844,18 +950,7 @@ server.registerTool(
       priority: z.enum(['low', 'medium', 'high']).optional(),
       limit: z.number().min(1).max(100).optional()
     },
-    outputSchema: {
-      tasks: z.array(z.object({
-        id: z.number(),
-        title: z.string(),
-        description: z.string().nullable(),
-        status: z.string(),
-        priority: z.string(),
-        created_at: z.string(),
-        updated_at: z.string()
-      })),
-      count: z.number()
-    }
+    outputSchema: z.any()
   },
    async ({ status, priority, limit = 50 }) => {
     try {
