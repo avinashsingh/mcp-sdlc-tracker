@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    .status-badge {
+      font-size: 0.75em;
+      padding: 0.25em 0.5em;
+    }
+    .entity-card {
+      transition: all 0.2s ease;
+    }
+    .entity-card:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .phase-indicator {
+      font-size: 0.8em;
+      opacity: 0.8;
+    }
+    .last-modified {
+      font-size: 0.75em;
+      color: #6c757d;
+    }
+    .hierarchy-level-1 { margin-left: 0; }
+    .hierarchy-level-2 { margin-left: 2rem; }
+    .hierarchy-level-3 { margin-left: 4rem; }
+    .hierarchy-level-4 { margin-left: 6rem; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container-fluid py-4">
+    <div class="row">
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+          <h1 class="h3 mb-0">
+            <i class="bi bi-kanban text-primary me-2"></i>
+            SDLC Tracker Dashboard
+          </h1>
+          <button class="btn btn-outline-primary btn-sm" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Refresh
+          </button>
+        </div>
+
+        <div id="loading" class="text-center py-5">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2 text-muted">Loading SDLC data...</p>
+        </div>
+
+        <div id="content" class="d-none">
+          <!-- SDLC Hierarchy will be rendered here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let epicsData = [];
+
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffTime = Math.abs(now - date);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) return 'today';
+      if (diffDays === 2) return 'yesterday';
+      if (diffDays <= 7) return `${diffDays - 1} days ago`;
+      return date.toLocaleDateString();
+    }
+
+    function getStatusBadge(status) {
+      const statusMap = {
+        'New': 'secondary',
+        'Open': 'info',
+        'In Progress': 'primary',
+        'Review': 'warning',
+        'QA': 'info',
+        'UAT': 'warning',
+        'Fixed': 'success',
+        'Closed': 'success',
+        'Passed': 'success',
+        'Failed': 'danger',
+        'Critical': 'danger',
+        'High': 'danger',
+        'Medium': 'warning',
+        'Low': 'secondary'
+      };
+      return statusMap[status] || 'secondary';
+    }
+
+    function getEntityIcon(type) {
+      const iconMap = {
+        'epic': 'bi-trophy',
+        'user_story': 'bi-card-text',
+        'task': 'bi-check-circle',
+        'bug': 'bi-bug',
+        'test_case': 'bi-clipboard-check'
+      };
+      return iconMap[type] || 'bi-circle';
+    }
+
+    function createEntityCard(entity, type, level = 1) {
+      const badgeClass = getStatusBadge(entity.status);
+      const iconClass = getEntityIcon(type);
+      const phaseInfo = entity.phase ? `<span class="phase-indicator ms-2"><i class="bi bi-diagram-3"></i> ${entity.phase}</span>` : '';
+      const lastModified = formatDate(entity.updated_at);
+
+      return `
+        <div class="card entity-card mb-2 hierarchy-level-${level}">
+          <div class="card-body py-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center flex-grow-1">
+                <i class="bi ${iconClass} text-muted me-2"></i>
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center mb-1">
+                    <span class="fw-medium text-truncate">${entity.title || entity.description || `ID: ${entity.id}`}</span>
+                    <span class="badge bg-${badgeClass} ms-2 status-badge">${entity.status}</span>
+                    ${phaseInfo}
+                  </div>
+                  <div class="last-modified">
+                    <i class="bi bi-clock me-1"></i>
+                    Modified ${lastModified}
+                  </div>
+                </div>
+              </div>
+              ${entity.user_story_count !== undefined || entity.task_count !== undefined || entity.bug_count !== undefined || entity.test_case_count !== undefined ?
+                `<div class="text-muted small">
+                  ${entity.user_story_count !== undefined ? `<i class="bi bi-card-text me-1"></i>${entity.user_story_count}` : ''}
+                  ${entity.task_count !== undefined ? `<i class="bi bi-check-circle ms-2 me-1"></i>${entity.task_count}` : ''}
+                  ${entity.bug_count !== undefined ? `<i class="bi bi-bug ms-2 me-1"></i>${entity.bug_count}` : ''}
+                  ${entity.test_case_count !== undefined ? `<i class="bi bi-clipboard-check ms-2 me-1"></i>${entity.test_case_count}` : ''}
+                </div>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSDLC() {
+      const content = document.getElementById('content');
+      let html = '';
+
+      epicsData.forEach(epic => {
+        html += createEntityCard(epic, 'epic', 1);
+
+        if (epic.userStories && epic.userStories.length > 0) {
+          epic.userStories.forEach(userStory => {
+            html += createEntityCard(userStory, 'user_story', 2);
+
+            // Tasks
+            if (userStory.tasks && userStory.tasks.length > 0) {
+              userStory.tasks.forEach(task => {
+                html += createEntityCard(task, 'task', 3);
+              });
+            }
+
+            // Bugs
+            if (userStory.bugs && userStory.bugs.length > 0) {
+              userStory.bugs.forEach(bug => {
+                html += createEntityCard(bug, 'bug', 3);
+              });
+            }
+
+            // Test Cases
+            if (userStory.testCases && userStory.testCases.length > 0) {
+              userStory.testCases.forEach(testCase => {
+                html += createEntityCard(testCase, 'test_case', 3);
+              });
+            }
+          });
+        }
+      });
+
+      content.innerHTML = html;
+    }
+
+    async function loadData() {
+      try {
+        const response = await fetch('/api/epics');
+        if (!response.ok) {
+          throw new Error('Failed to load data');
+        }
+        epicsData = await response.json();
+
+        document.getElementById('loading').classList.add('d-none');
+        document.getElementById('content').classList.remove('d-none');
+
+        renderSDLC();
+      } catch (error) {
+        document.getElementById('loading').innerHTML = `
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            Failed to load SDLC data. Please check if the database is initialized.
+          </div>
+        `;
+        console.error('Error loading data:', error);
+      }
+    }
+
+    // Load data when page loads
+    document.addEventListener('DOMContentLoaded', loadData);
+  </script>
+</body>
+</html>

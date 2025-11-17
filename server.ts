@@ -3,6 +3,20 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import Database from 'better-sqlite3';
 import { z } from 'zod';
 import { existsSync, statSync } from 'fs';
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import open from 'open';
+
+// ES module __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create Express app
+const app = express();
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Enhanced Universal Filters Interface
 interface UniversalFilters {
@@ -30,6 +44,10 @@ interface ListResponse<T> {
 let db: Database | null = null;
 let dbPath: string | null = null;
 let isInitialized = false;
+
+// HTTP Server state
+let httpPort: number | null = null;
+let browserOpened = false;
 
 function getDatabase(): Database {
   if (!isInitialized || !db) {
@@ -59,6 +77,129 @@ function validateForeignKeys(database: Database, type: 'epic' | 'user_story' | '
   return { valid: invalidIds.length === 0, invalidIds };
 }
 
+// HTTP API Routes
+app.get('/api/status', (req, res) => {
+  res.json({
+    initialized: isInitialized,
+    databasePath: dbPath,
+    serverPort: httpPort
+  });
+});
+
+app.get('/api/epics', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const database = getDatabase();
+    const epics = database.prepare(`
+      SELECT e.*, COUNT(us.id) as user_story_count
+      FROM epics e
+      LEFT JOIN user_stories us ON e.id = us.epic_id
+      GROUP BY e.id
+      ORDER BY e.created_at DESC
+    `).all();
+
+    // Get user stories for each epic
+    for (const epic of epics) {
+      epic.userStories = database.prepare(`
+        SELECT us.*,
+               COUNT(t.id) as task_count,
+               COUNT(b.id) as bug_count,
+               COUNT(tc.id) as test_case_count
+        FROM user_stories us
+        LEFT JOIN tasks t ON us.id = t.user_story_id
+        LEFT JOIN bugs b ON us.id = b.user_story_id
+        LEFT JOIN test_cases tc ON us.id = tc.user_story_id
+        WHERE us.epic_id = ?
+        GROUP BY us.id
+        ORDER BY us.created_at DESC
+      `).all(epic.id);
+
+      // Get tasks, bugs, and test cases for each user story
+      for (const userStory of epic.userStories) {
+        userStory.tasks = database.prepare(`
+          SELECT * FROM tasks WHERE user_story_id = ? ORDER BY created_at DESC
+        `).all(userStory.id);
+
+        userStory.bugs = database.prepare(`
+          SELECT * FROM bugs WHERE user_story_id = ? ORDER BY created_at DESC
+        `).all(userStory.id);
+
+        userStory.testCases = database.prepare(`
+          SELECT * FROM test_cases WHERE user_story_id = ? ORDER BY created_at DESC
+        `).all(userStory.id);
+      }
+    }
+
+    res.json(epics);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Main dashboard route
+app.get('/', (req, res) => {
+  if (!isInitialized) {
+    return res.redirect('/init');
+  }
+
+  res.render('dashboard', {
+    title: 'SDLC Tracker Dashboard'
+  });
+});
+
+// Initialization pending page
+app.get('/init', (req, res) => {
+  res.render('init', {
+    title: 'SDLC Tracker - Initialization Required'
+  });
+});
+
+// Manual browser opening endpoint
+app.get('/open-browser', async (req, res) => {
+  const url = `http://localhost:${httpPort}`;
+  try {
+    await open(url);
+    res.json({ success: true, message: 'Browser opened successfully' });
+  } catch (error) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// Function to attempt browser opening
+async function tryOpenBrowser(url: string) {
+  if (!isInitialized) {
+    console.error('⏳ Database not initialized - serving init page');
+    console.error(`   Initialize database first, then visit: ${url}`);
+    return;
+  }
+
+  if (browserOpened) {
+    console.error('📱 Browser already opened');
+    return;
+  }
+
+  console.error('📊 Dashboard ready - opening browser...');
+  try {
+    // Add timeout to prevent hanging
+    const openPromise = open(url);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Browser open timeout')), 5000)
+    );
+
+    await Promise.race([openPromise, timeoutPromise]);
+    browserOpened = true;
+    console.error('🚀 Browser opened automatically');
+  } catch (error) {
+    console.error('⚠️  Browser auto-open failed:');
+    console.error(`   Error: ${error.message}`);
+    console.error(`   Platform: ${process.platform}`);
+    console.error(`   URL: ${url}`);
+    console.error('   Please manually open the URL above');
+  }
+}
 
 // Create MCP server
 const server = new McpServer({
@@ -278,6 +419,12 @@ server.registerTool(
       `);
 
       isInitialized = true;
+
+      // Try to open browser now that database is initialized
+      if (httpPort) {
+        const url = `http://localhost:${httpPort}`;
+        setTimeout(() => tryOpenBrowser(url), 100); // Small delay to ensure server is ready
+      }
 
       return {
         content: [{ type: 'text', text: 'Database initialized successfully' }],
@@ -1624,16 +1771,32 @@ server.registerTool(
 
 
 
-// Connect to stdio transport
+// Connect to stdio transport and start HTTP server
 async function main() {
+  // Start MCP server
   const transport = new StdioServerTransport();
   await server.connect(transport);
-
   console.error('MCP server connected and ready');
+
+  // Start HTTP server after a brief delay to avoid interference
+  setTimeout(async () => {
+    const PORT = Math.floor(Math.random() * 7000) + 3000; // Random port 3000-9999
+    httpPort = PORT;
+
+    try {
+  app.listen(PORT, () => {
+    const url = `http://localhost:${PORT}`;
+    console.error(`🌐 Web UI available at ${url}`);
+    tryOpenBrowser(url);
+  });
+    } catch (error) {
+      console.error('HTTP Server startup error:', error);
+    }
+  }, 1000); // 1 second delay
 
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    console.error('Shutting down MCP server');
+    console.error('Shutting down servers');
     if (db) db.close();
     process.exit(0);
   });

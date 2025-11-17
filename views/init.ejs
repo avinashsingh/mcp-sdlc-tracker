@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    .init-card {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+    }
+    .status-checking { background-color: #ffc107; }
+    .status-initialized { background-color: #28a745; }
+    .status-not-initialized { background-color: #dc3545; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <div class="card shadow init-card">
+          <div class="card-body text-center p-5">
+            <div class="mb-4">
+              <i class="bi bi-database-exclamation text-warning" style="font-size: 4rem;"></i>
+            </div>
+
+            <h2 class="card-title mb-3">SDLC Tracker - Initialization Required</h2>
+
+            <div class="alert alert-info mb-4">
+              <h5 class="alert-heading mb-2">
+                <span id="status-indicator" class="status-indicator status-checking"></span>
+                Checking Database Status...
+              </h5>
+              <p class="mb-0" id="status-message">
+                Please wait while we check if the database has been initialized.
+              </p>
+            </div>
+
+            <div id="init-instructions" class="d-none">
+              <p class="card-text text-muted mb-4">
+                The SDLC Tracker database has not been initialized yet.
+                Please initialize the database first before accessing the dashboard.
+              </p>
+
+              <div class="bg-light p-3 rounded mb-4 text-start">
+                <h6 class="fw-bold mb-2">Next Steps:</h6>
+                <ol class="mb-0">
+                  <li>Use the MCP <code>initialize</code> tool with your project path</li>
+                  <li>Example: <code>initialize path="/path/to/your/project"</code></li>
+                  <li>Refresh this page or wait for auto-redirect</li>
+                </ol>
+              </div>
+
+              <button class="btn btn-primary me-2" onclick="checkStatus()">
+                <i class="bi bi-arrow-clockwise me-1"></i>
+                Check Again
+              </button>
+
+              <button class="btn btn-success me-2" onclick="openBrowser()">
+                <i class="bi bi-browser-chrome me-1"></i>
+                Open Browser
+              </button>
+
+              <button class="btn btn-outline-secondary" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise me-1"></i>
+                Refresh Page
+              </button>
+            </div>
+
+            <div id="init-success" class="d-none">
+              <div class="alert alert-success">
+                <h5 class="alert-heading">
+                  <i class="bi bi-check-circle-fill me-2"></i>
+                  Database Initialized!
+                </h5>
+                <p class="mb-0">Redirecting to dashboard...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let checkInterval;
+
+    async function checkStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusMessage = document.getElementById('status-message');
+        const initInstructions = document.getElementById('init-instructions');
+        const initSuccess = document.getElementById('init-success');
+
+        if (data.initialized) {
+          // Database is initialized
+          statusIndicator.className = 'status-indicator status-initialized';
+          statusMessage.textContent = 'Database is initialized and ready!';
+          initInstructions.classList.add('d-none');
+          initSuccess.classList.remove('d-none');
+
+          // Redirect to dashboard after a short delay
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 2000);
+
+          // Clear the checking interval
+          if (checkInterval) {
+            clearInterval(checkInterval);
+          }
+        } else {
+          // Database not initialized
+          statusIndicator.className = 'status-indicator status-not-initialized';
+          statusMessage.textContent = 'Database has not been initialized yet.';
+          initInstructions.classList.remove('d-none');
+          initSuccess.classList.add('d-none');
+        }
+      } catch (error) {
+        console.error('Error checking status:', error);
+        document.getElementById('status-indicator').className = 'status-indicator status-not-initialized';
+        document.getElementById('status-message').textContent = 'Error checking database status. Please refresh the page.';
+        document.getElementById('init-instructions').classList.remove('d-none');
+      }
+    }
+
+    async function openBrowser() {
+      try {
+        const response = await fetch('/open-browser');
+        const result = await response.json();
+        if (result.success) {
+          alert('Browser opened successfully!');
+        } else {
+          alert('Failed to open browser: ' + result.error);
+        }
+      } catch (error) {
+        alert('Error opening browser: ' + error.message);
+      }
+    }
+
+    // Check status immediately and then every 3 seconds
+    document.addEventListener('DOMContentLoaded', () => {
+      checkStatus();
+      checkInterval = setInterval(checkStatus, 3000);
+    });
+
+    // Clean up interval when page unloads
+    window.addEventListener('beforeunload', () => {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
+    });
+  </script>
+</body>
+</html>
