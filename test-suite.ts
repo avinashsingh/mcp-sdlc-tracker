@@ -120,6 +120,16 @@ db.exec(`
     transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
   );
+
+  CREATE TABLE IF NOT EXISTS ownership_transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+    entity_id INTEGER NOT NULL,
+    from_owner TEXT CHECK (from_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    to_owner TEXT NOT NULL CHECK (to_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
+  );
 `);
 
 // Test suite
@@ -399,6 +409,28 @@ class TrackerTestSuite {
     }
   }
 
+  async testUpdateEntityAssignment() {
+    try {
+      // Update user story assignment
+      const updateStmt = db.prepare('UPDATE user_stories SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result = updateStmt.run('architect', 1);
+      this.assert(result.changes === 1, 'Should update 1 user story assignment');
+
+      // Check assignment was updated
+      const checkStmt = db.prepare('SELECT assigned_to FROM user_stories WHERE id = ?');
+      const updated = checkStmt.get(1) as { assigned_to: string };
+      this.assert(updated.assigned_to === 'architect', 'Assignment should be updated');
+
+      // Record ownership transition
+      const ownershipStmt = db.prepare('INSERT INTO ownership_transitions (entity_type, entity_id, from_owner, to_owner, transitioned_by) VALUES (?, ?, ?, ?, ?)');
+      ownershipStmt.run('user_story', 1, 'developer', 'architect', 'productmanager');
+
+      this.recordTest('testUpdateEntityAssignment', true);
+    } catch (error) {
+      this.recordTest('testUpdateEntityAssignment', false, error.message);
+    }
+  }
+
   async testUpdateTaskStatus() {
     try {
       const updateStmt = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -422,8 +454,8 @@ class TrackerTestSuite {
       this.assert(openEpics.length === 2, 'Should find 2 new epics');
 
       // Test user story assignment filtering
-      const devStories = db.prepare('SELECT * FROM user_stories WHERE assigned_to = ?').all('developer');
-      this.assert(devStories.length === 1, 'Should find 1 developer-assigned story');
+      const architectStories = db.prepare('SELECT * FROM user_stories WHERE assigned_to = ?').all('architect');
+      this.assert(architectStories.length === 2, 'Should find 2 architect-assigned stories');
 
       // Test bug severity filtering
       const highBugs = db.prepare('SELECT * FROM bugs WHERE severity = ?').all('High');
@@ -498,6 +530,7 @@ class TrackerTestSuite {
 
     // Test update operations
     await this.testUpdateEntityStatus();
+    await this.testUpdateEntityAssignment();
     await this.testUpdateTaskStatus();
 
     // Test advanced features

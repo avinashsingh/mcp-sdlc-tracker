@@ -38,7 +38,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `list_test_cases`: List test cases with optional filtering by status, assignee
 
 ### Workflow Management
-- `update_entity_status`: Update status of any SDLC entity with audit trail recording
+- `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
 - `update_task_status`: Update task status
 
 ### Comments Support

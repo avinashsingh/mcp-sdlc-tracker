@@ -1193,12 +1193,13 @@ server.registerTool(
 server.registerTool(
   'update_entity_status',
   {
-    title: 'Update Entity Status',
-    description: 'Update the status of any SDLC entity (epic, user_story, task, bug, test_case)',
+    title: 'Update Entity Status and Assignment',
+    description: 'Update the status and/or assignment of any SDLC entity (epic, user_story, task, bug, test_case)',
     inputSchema: {
       entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
       entity_id: z.number(),
-      status: z.string(), // Will be validated by database CHECK constraints
+      status: z.string().optional(), // Will be validated by database CHECK constraints
+      assigned_to: z.string().optional(), // Will be validated by database CHECK constraints
       transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
     },
     outputSchema: {
@@ -1206,10 +1207,12 @@ server.registerTool(
       entity_type: z.string(),
       entity_id: z.number(),
       old_status: z.string().nullable(),
-      new_status: z.string()
+      new_status: z.string().nullable(),
+      old_assigned_to: z.string().nullable(),
+      new_assigned_to: z.string().nullable()
     }
   },
-  async ({ entity_type, entity_id, status, transitioned_by }) => {
+  async ({ entity_type, entity_id, status, assigned_to, transitioned_by }) => {
     try {
       const tableName = {
         epic: 'epics',
@@ -1218,10 +1221,10 @@ server.registerTool(
         bug: 'bugs',
         test_case: 'test_cases'
       }[entity_type];
-      // Get current status
+      // Get current status and assigned_to
       const database = getDatabase();
-      const currentStmt = database.prepare(`SELECT status FROM ${tableName} WHERE id = ?`);
-      const current = currentStmt.get(entity_id) as { status: string } | undefined;
+      const currentStmt = database.prepare(`SELECT status, assigned_to FROM ${tableName} WHERE id = ?`);
+      const current = currentStmt.get(entity_id) as { status: string; assigned_to: string } | undefined;
 
       if (!current) {
         return {
@@ -1230,34 +1233,70 @@ server.registerTool(
         };
       }
 
-      // Update status
-      const updateStmt = database.prepare(`
-        UPDATE ${tableName}
-        SET status = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `);
-      const result = updateStmt.run(status, entity_id);
+      // Build update query dynamically
+      const updates: string[] = [];
+      const params: any[] = [];
 
-      if (result.changes === 0) {
+      if (status !== undefined) {
+        updates.push('status = ?');
+        params.push(status);
+      }
+
+      if (assigned_to !== undefined) {
+        updates.push('assigned_to = ?');
+        params.push(assigned_to);
+      }
+
+      if (updates.length === 0) {
         return {
-          content: [{ type: 'text', text: `Failed to update ${entity_type} status` }],
+          content: [{ type: 'text', text: `No updates specified for ${entity_type}` }],
           isError: true
         };
       }
 
-      // Record status transition
-      const transitionStmt = database.prepare(`
-        INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
-        VALUES (?, ?, ?, ?, ?)
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+
+      const updateStmt = database.prepare(`
+        UPDATE ${tableName}
+        SET ${updates.join(', ')}
+        WHERE id = ?
       `);
-      transitionStmt.run(entity_type, entity_id, current.status, status, transitioned_by);
+      params.push(entity_id);
+
+      const result = updateStmt.run(...params);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: `Failed to update ${entity_type}` }],
+          isError: true
+        };
+      }
+
+      // Record transitions
+      if (status !== undefined && status !== current.status) {
+        const transitionStmt = database.prepare(`
+          INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        transitionStmt.run(entity_type, entity_id, current.status, status, transitioned_by);
+      }
+
+      if (assigned_to !== undefined && assigned_to !== current.assigned_to) {
+        const ownershipStmt = database.prepare(`
+          INSERT INTO ownership_transitions (entity_type, entity_id, from_owner, to_owner, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        ownershipStmt.run(entity_type, entity_id, current.assigned_to, assigned_to, transitioned_by);
+      }
 
       const output = {
         success: true,
         entity_type,
         entity_id,
-        old_status: current.status,
-        new_status: status
+        old_status: status !== undefined ? current.status : null,
+        new_status: status !== undefined ? status : null,
+        old_assigned_to: assigned_to !== undefined ? current.assigned_to : null,
+        new_assigned_to: assigned_to !== undefined ? assigned_to : null
       };
 
       return {
@@ -1266,7 +1305,7 @@ server.registerTool(
       };
     } catch (error) {
       return {
-        content: [{ type: 'text', text: `Error updating ${entity_type} status: ${error.message}` }],
+        content: [{ type: 'text', text: `Error updating ${entity_type}: ${error.message}` }],
         isError: true
       };
     }
