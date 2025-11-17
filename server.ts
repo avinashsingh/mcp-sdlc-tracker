@@ -38,6 +38,27 @@ function getDatabase(): Database {
   return db;
 }
 
+// Helper function to validate foreign key references
+function validateForeignKeys(database: Database, type: 'epic' | 'user_story' | 'task', ids: (number | null)[]): { valid: boolean; invalidIds: number[] } {
+  if (ids.every(id => id === null)) {
+    return { valid: true, invalidIds: [] };
+  }
+
+  const nonNullIds = ids.filter(id => id !== null) as number[];
+  if (nonNullIds.length === 0) {
+    return { valid: true, invalidIds: [] };
+  }
+
+  const tableName = type === 'epic' ? 'epics' : type === 'user_story' ? 'user_stories' : 'tasks';
+  const placeholders = nonNullIds.map(() => '?').join(',');
+  const stmt = database.prepare(`SELECT id FROM ${tableName} WHERE id IN (${placeholders})`);
+  const existing = stmt.all(...nonNullIds) as { id: number }[];
+  const existingIds = existing.map(row => row.id);
+  const invalidIds = nonNullIds.filter(id => !existingIds.includes(id));
+
+  return { valid: invalidIds.length === 0, invalidIds };
+}
+
 
 // Create MCP server
 const server = new McpServer({
@@ -354,7 +375,7 @@ server.registerTool(
     description: 'Create multiple user stories in the SDLC tracker',
     inputSchema: {
       user_stories: z.array(z.object({
-        epic_id: z.number().optional(),
+        epic_id: z.number(),
         title: z.string().min(1, 'Title is required'),
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
@@ -364,9 +385,10 @@ server.registerTool(
     },
     outputSchema: {
       user_stories_created: z.array(z.object({
-        user_story_id: z.number(),
+        user_story_id: z.number().nullable(),
         title: z.string(),
-        success: z.boolean()
+        success: z.boolean(),
+        error: z.string().optional()
       })),
       total_created: z.number()
     }
@@ -374,6 +396,17 @@ server.registerTool(
   async ({ user_stories }) => {
     try {
       const database = getDatabase();
+
+      // Validate epic references
+      const epicIds = user_stories.map(us => us.epic_id).filter(id => id !== undefined);
+      const epicValidation = validateForeignKeys(database, 'epic', epicIds);
+      if (!epicValidation.valid) {
+        return {
+          content: [{ type: 'text', text: `Invalid epic IDs: ${epicValidation.invalidIds.join(', ')}` }],
+          isError: true
+        };
+      }
+
       const stmt = database.prepare(`
         INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -408,7 +441,7 @@ server.registerTool(
 
       const successful = results.filter(r => r.success);
       const output = {
-        user_stories_created: successful,
+        user_stories_created: results,
         total_created: successful.length
       };
 
@@ -433,26 +466,37 @@ server.registerTool(
     description: 'Create multiple tasks in the SDLC tracker',
     inputSchema: {
       tasks: z.array(z.object({
-        user_story_id: z.number().optional(),
+        user_story_id: z.number(),
         title: z.string().min(1, 'Title is required'),
         description: z.string().optional(),
         assigned_to: z.enum(['architect', 'developer']).optional(),
         estimated_hours: z.number().optional()
        })).min(1, 'At least one task is required')
      },
-     outputSchema: {
-       tasks_created: z.array(z.object({
-         task_id: z.number(),
-         title: z.string(),
-         success: z.boolean(),
-         error: z.string().optional()
-       })),
-       total_created: z.number()
-     }
+      outputSchema: {
+        tasks_created: z.array(z.object({
+          task_id: z.number().nullable(),
+          title: z.string(),
+          success: z.boolean(),
+          error: z.string().optional()
+        })),
+        total_created: z.number()
+      }
   },
    async ({ tasks }) => {
      try {
        const database = getDatabase();
+
+       // Validate user story references
+       const userStoryIds = tasks.map(t => t.user_story_id).filter(id => id !== undefined);
+       const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
+       if (!userStoryValidation.valid) {
+         return {
+           content: [{ type: 'text', text: `Invalid user story IDs: ${userStoryValidation.invalidIds.join(', ')}` }],
+           isError: true
+         };
+       }
+
       const stmt = database.prepare(`
          INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, created_by)
          VALUES (?, ?, ?, ?, ?, ?)
@@ -522,7 +566,7 @@ server.registerTool(
     },
     outputSchema: {
       bugs_created: z.array(z.object({
-        bug_id: z.number(),
+        bug_id: z.number().nullable(),
         title: z.string(),
         success: z.boolean(),
         error: z.string().optional()
@@ -533,6 +577,29 @@ server.registerTool(
   async ({ bugs }) => {
     try {
       const database = getDatabase();
+
+      // Validate user story and task references
+      const userStoryIds = bugs.map(b => b.user_story_id).filter(id => id !== undefined);
+      const taskIds = bugs.map(b => b.task_id).filter(id => id !== undefined);
+
+      const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
+      const taskValidation = validateForeignKeys(database, 'task', taskIds);
+
+      const invalidIds = [];
+      if (!userStoryValidation.valid) {
+        invalidIds.push(`user stories: ${userStoryValidation.invalidIds.join(', ')}`);
+      }
+      if (!taskValidation.valid) {
+        invalidIds.push(`tasks: ${taskValidation.invalidIds.join(', ')}`);
+      }
+
+      if (invalidIds.length > 0) {
+        return {
+          content: [{ type: 'text', text: `Invalid foreign key references: ${invalidIds.join('; ')}` }],
+          isError: true
+        };
+      }
+
       const stmt = database.prepare(`
         INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -601,11 +668,31 @@ server.registerTool(
         expected_result: z.string().min(1, 'Expected result is required'),
         assigned_to: z.enum(['tester', 'productmanager']).optional()
       })).min(1, 'At least one test case is required')
+    },
+    outputSchema: {
+      test_cases_created: z.array(z.object({
+        test_case_id: z.number().nullable(),
+        title: z.string(),
+        success: z.boolean(),
+        error: z.string().optional()
+      })),
+      total_created: z.number()
     }
   },
   async ({ test_cases }) => {
     try {
       const database = getDatabase();
+
+      // Validate user story references
+      const userStoryIds = test_cases.map(tc => tc.user_story_id).filter(id => id !== undefined);
+      const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
+      if (!userStoryValidation.valid) {
+        return {
+          content: [{ type: 'text', text: `Invalid user story IDs: ${userStoryValidation.invalidIds.join(', ')}` }],
+          isError: true
+        };
+      }
+
       const stmt = database.prepare(`
         INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -760,7 +847,7 @@ server.registerTool(
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      epics: z.array(z.object({
+      data: z.array(z.object({
         id: z.number(),
         title: z.string(),
         description: z.string().nullable(),
@@ -770,32 +857,58 @@ server.registerTool(
         created_at: z.string(),
         updated_at: z.string()
       })),
-      count: z.number()
+      total_count: z.number(),
+      filtered_count: z.number(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }),
+      applied_filters: z.record(z.any()),
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      })
     }
   },
-  async ({ status, limit = 50 }) => {
-    try {
-      const database = getDatabase();
-      let query = 'SELECT * FROM epics WHERE 1=1';
-      const params: any[] = [];
+   async ({ status, limit = 50 }) => {
+     try {
+       const database = getDatabase();
+       let query = 'SELECT * FROM epics WHERE 1=1';
+       const params: any[] = [];
+       const applied_filters: { [key: string]: any } = {};
 
-      if (status) {
-        query += ' AND status = ?';
-        params.push(status);
-      }
+       if (status) {
+         query += ' AND status = ?';
+         params.push(status);
+         applied_filters.status = status;
+       }
 
-      query += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(limit);
+       query += ' ORDER BY created_at DESC LIMIT ?';
+       params.push(limit);
 
-      const stmt = database.prepare(query);
-      const epics = stmt.all(...params);
+       const stmt = database.prepare(query);
+       const epics = stmt.all(...params);
 
-      const output = {
-        epics,
-        count: epics.length
-      };
+       const output = {
+         data: epics,
+         total_count: epics.length,
+         filtered_count: epics.length,
+         phase_context: {
+           current_phase: "Not Set",
+           phase_status: "New",
+           active_stakeholders: ["productmanager"]
+         },
+         applied_filters,
+         pagination: {
+           limit,
+           offset: 0,
+           has_more: false
+         }
+       };
 
-      return {
+       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output
       };
@@ -1319,7 +1432,7 @@ server.registerTool(
     title: 'List Tasks',
     description: 'List tasks with optional filtering',
     inputSchema: {
-      status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+      status: z.enum(['New', 'In Progress', 'Closed']).optional(),
       priority: z.enum(['low', 'medium', 'high']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
@@ -1427,7 +1540,7 @@ server.registerTool(
     description: 'Update the status of an existing task',
     inputSchema: {
       task_id: z.number(),
-      status: z.enum(['pending', 'in_progress', 'completed'])
+      status: z.enum(['New', 'In Progress', 'Closed'])
     },
     outputSchema: {
       success: z.boolean(),

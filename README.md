@@ -9,6 +9,8 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - **Comments System**: Stakeholder feedback and collaboration on all entities
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
 - **Audit Trail**: Ownership and status transition tracking
+- **Data Validation**: Comprehensive input validation and foreign key constraint checking
+- **Error Handling**: Clear error messages for invalid operations and constraint violations
 - **SQLite Backend**: Uses SQLite with better-sqlite3 for efficient operations
 
 ## Tools Available
@@ -43,6 +45,41 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
+
+## Error Handling & Validation
+
+The server includes comprehensive error handling and data validation:
+
+### Input Validation
+- **Required Fields**: All required fields are validated using Zod schemas
+- **Data Types**: Proper type checking for all inputs
+- **Enum Values**: Stakeholder roles and status values are strictly validated
+
+### Foreign Key Validation
+- **Reference Checking**: All foreign key references (epic_id, user_story_id, task_id) are validated before database operations
+- **Clear Error Messages**: Invalid references return specific error messages (e.g., "Invalid epic IDs: 999")
+- **Constraint Enforcement**: Database constraints are checked and violations are handled gracefully
+
+### Error Response Format
+- **Consistent Structure**: All tools return structured error responses with clear messages
+- **Partial Success**: Creation tools can return both successful and failed operations in a single response
+- **Validation Errors**: Input validation failures include detailed field-level error information
+
+### Example Error Responses
+```javascript
+// Foreign key validation error
+"Invalid epic IDs: 999"
+
+// Input validation error
+{
+  "code": "too_small",
+  "minimum": 1,
+  "message": "Title is required"
+}
+
+// Constraint violation
+"FOREIGN KEY constraint failed"
+```
 
 ## Resources Available
 
@@ -203,20 +240,20 @@ Once connected to an MCP client, you can:
 2. "List all open epics"
 
 ### User Story Creation
-3. "Create user stories: 'As a user, I want to login with email/password' (5 points) and 'As a user, I want to reset my password' (3 points) for epic 1"
+3. "Create user stories: 'As a user, I want to login with email/password' (5 points) and 'As a user, I want to reset my password' (3 points) for epic 1" (Note: Epic ID is validated - invalid references return clear error messages)
 4. "List user stories in progress assigned to developer"
 
 ### Task Breakdown
-5. "Create tasks: 'Implement password hashing' (4 hours) and 'Create login UI' (6 hours) for user story 1 assigned to developer"
+5. "Create tasks: 'Implement password hashing' (4 hours) and 'Create login UI' (6 hours) for user story 1 assigned to developer" (Note: User story references are validated)
 6. "List tasks that are in progress"
 7. "Update task 1 status to 'Closed'"
 
 ### Bug Tracking
-7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)"
+7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
 8. "List all open bugs with high severity"
 
 ### Test Case Creation
-9. "Create test cases: 'Verify user can login successfully' and 'Verify password reset works' for user story 1"
+9. "Create test cases: 'Verify user can login successfully' and 'Verify password reset works' for user story 1" (Note: User story references are validated if provided)
 10. "List test cases that have failed"
 
 ### Comments and Collaboration
@@ -245,15 +282,25 @@ Runs integration tests that start the MCP server, initialize the database, and v
 - Server startup and connectivity
 - Database initialization via MCP
 - Database operations (create, read, update)
+- Error handling and validation
+- Foreign key constraint checking
 - Server stability
 - Proper cleanup
 
 ## Development
 
 The server is written in TypeScript and uses:
+
 - `@modelcontextprotocol/sdk`: Official MCP TypeScript SDK
 - `better-sqlite3`: High-performance SQLite library
 - `zod`: Schema validation for tool inputs/outputs
+
+### Recent Improvements
+
+- **Enhanced Error Handling**: Comprehensive validation with clear error messages
+- **Foreign Key Validation**: All entity references are validated before database operations
+- **Consistent API Responses**: All list tools now use standardized response format
+- **Improved Data Integrity**: Better constraint checking and error reporting
 
 ## License
 
