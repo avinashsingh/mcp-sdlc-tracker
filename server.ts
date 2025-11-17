@@ -1,14 +1,14 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import Database from "better-sqlite3";
-import { z } from "zod";
-import { existsSync, statSync } from "fs";
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import Database from 'better-sqlite3';
+import { z } from 'zod';
+import { existsSync, statSync } from 'fs';
 
 // Enhanced Universal Filters Interface
 interface UniversalFilters {
   // ... existing filters ...
-  phase?: string | string[]; // Filter by current phase
-  phase_status?: string | string[]; // Filter by phase completion status
+  phase?: string | string[];           // Filter by current phase
+  phase_status?: string | string[];     // Filter by phase completion status
   // ... other existing filters
 }
 
@@ -17,8 +17,7 @@ interface ListResponse<T> {
   data: T[];
   total_count: number;
   filtered_count: number;
-  phase_context?: {
-    // NEW: Phase context in responses
+  phase_context?: {                       // NEW: Phase context in responses
     current_phase: string;
     phase_status: string;
     active_stakeholders: string[];
@@ -34,41 +33,34 @@ let isInitialized = false;
 
 function getDatabase(): Database {
   if (!isInitialized || !db) {
-    throw new Error(
-      `Database not initialized. Please run 'initialize' command first with project directory path.`,
-    );
+    throw new Error(`Database not initialized. Please run 'initialize' command first with project directory path.`);
   }
   return db;
 }
 
+
 // Create MCP server
 const server = new McpServer({
-  name: "sqlite-tracker-server",
-  version: "1.0.0",
+  name: 'sqlite-tracker-server',
+  version: '1.0.0'
 });
 
 // SDLC Entity Management Tools
 
 // Tool: Initialize Database
 server.registerTool(
-  "initialize",
+  'initialize',
   {
-    title: "Initialize Database",
-    description:
-      'Initialize the SDLC tracker database in the specified project directory. You must provide your current working directory path (e.g., "/Users/username/project").',
+    title: 'Initialize Database',
+    description: 'Initialize the SDLC tracker database in the specified project directory. You must provide your current working directory path (e.g., "/Users/username/project").',
     inputSchema: {
-      path: z
-        .string()
-        .min(
-          1,
-          "Path is required. Provide your current working directory path.",
-        ),
+      path: z.string().min(1, "Path is required. Provide your current working directory path.")
     },
     outputSchema: {
       success: z.boolean(),
       message: z.string(),
-      database_path: z.string(),
-    },
+      database_path: z.string()
+    }
   },
   async ({ path }) => {
     try {
@@ -81,7 +73,7 @@ server.registerTool(
         throw new Error(`Path is not a directory: ${path}`);
       }
       // Basic security check: prevent path traversal
-      if (path.includes("..") || path.includes("\0")) {
+      if (path.includes('..') || path.includes('\0')) {
         throw new Error(`Invalid path: ${path}`);
       }
 
@@ -91,12 +83,12 @@ server.registerTool(
       // Check if already initialized
       if (isInitialized) {
         return {
-          content: [{ type: "text", text: "Database already initialized" }],
+          content: [{ type: 'text', text: 'Database already initialized' }],
           structuredContent: {
             success: false,
-            message: "Database already initialized",
-            database_path: dbPath!,
-          },
+            message: 'Database already initialized',
+            database_path: dbPath!
+          }
         };
       }
 
@@ -267,57 +259,46 @@ server.registerTool(
       isInitialized = true;
 
       return {
-        content: [{ type: "text", text: "Database initialized successfully" }],
+        content: [{ type: 'text', text: 'Database initialized successfully' }],
         structuredContent: {
           success: true,
-          message: "Database initialized successfully",
-          database_path: dbFilePath,
-        },
+          message: 'Database initialized successfully',
+          database_path: dbFilePath
+        }
       };
     } catch (error) {
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to initialize database: ${error.message}`,
-          },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Failed to initialize database: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Create Epics
 server.registerTool(
-  "create_epics",
+  'create_epics',
   {
-    title: "Create Epics",
-    description: "Create multiple epics in the SDLC tracker",
+    title: 'Create Epics',
+    description: 'Create multiple epics in the SDLC tracker',
     inputSchema: {
-      epics: z
-        .array(
-          z.object({
-            title: z.string().min(1, "Title is required"),
-            description: z.string().optional(),
-            assigned_to: z.literal("productmanager").optional(),
-          }),
-        )
-        .min(1, "At least one epic is required"),
+      epics: z.array(z.object({
+        title: z.string().min(1, 'Title is required'),
+        description: z.string().optional(),
+        assigned_to: z.literal('productmanager').optional()
+      })).min(1, 'At least one epic is required')
     },
     outputSchema: {
-      epics_created: z.array(
-        z.object({
-          epic_id: z.number(),
-          title: z.string(),
-          success: z.boolean(),
-        }),
-      ),
-      total_created: z.number(),
-    },
+      epics_created: z.array(z.object({
+        epic_id: z.number(),
+        title: z.string(),
+        success: z.boolean()
+      })),
+      total_created: z.number()
+    }
   },
   async ({ epics }) => {
-    console.error("create_epics called with:", JSON.stringify(epics, null, 2));
+    console.error('create_epics called with:', JSON.stringify(epics, null, 2));
     try {
       const database = getDatabase();
       const stmt = database.prepare(`
@@ -325,87 +306,70 @@ server.registerTool(
         VALUES (?, ?, ?)
       `);
 
-      const results: {
-        epic_id: number | null;
-        title: string;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const results: { epic_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const epic of epics) {
         try {
-          const result = stmt.run(
-            epic.title,
-            epic.description || null,
-            epic.assigned_to || "productmanager",
-          );
+          const result = stmt.run(epic.title, epic.description || null, epic.assigned_to || 'productmanager');
           results.push({
             epic_id: result.lastInsertRowid as number,
             title: epic.title,
-            success: true,
+            success: true
           });
         } catch (error) {
           results.push({
             epic_id: null,
             title: epic.title,
             success: false,
-            error: error.message,
+            error: error.message
           });
         }
       }
 
-      const successful = results.filter((r) => r.success);
+      const successful = results.filter(r => r.success);
       const output = {
         epics_created: results,
-        total_created: successful.length,
+        total_created: successful.length
       };
 
-      console.error("create_epics returning:", JSON.stringify(output, null, 2));
+      console.error('create_epics returning:', JSON.stringify(output, null, 2));
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
-      console.error("create_epics error:", error.message);
+      console.error('create_epics error:', error.message);
       return {
-        content: [
-          { type: "text", text: `Error creating epics: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error creating epics: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Create User Stories
 server.registerTool(
-  "create_user_stories",
+  'create_user_stories',
   {
-    title: "Create User Stories",
-    description: "Create multiple user stories in the SDLC tracker",
+    title: 'Create User Stories',
+    description: 'Create multiple user stories in the SDLC tracker',
     inputSchema: {
-      user_stories: z
-        .array(
-          z.object({
-            epic_id: z.number().optional(),
-            title: z.string().min(1, "Title is required"),
-            description: z.string().optional(),
-            acceptance_criteria: z.string().optional(),
-            story_points: z.number().optional(),
-            assigned_to: z.string().optional(),
-          }),
-        )
-        .min(1, "At least one user story is required"),
+      user_stories: z.array(z.object({
+        epic_id: z.number().optional(),
+        title: z.string().min(1, 'Title is required'),
+        description: z.string().optional(),
+        acceptance_criteria: z.string().optional(),
+        story_points: z.number().optional(),
+        assigned_to: z.string().optional()
+      })).min(1, 'At least one user story is required')
     },
     outputSchema: {
-      user_stories_created: z.array(
-        z.object({
-          user_story_id: z.number(),
-          title: z.string(),
-          success: z.boolean(),
-        }),
-      ),
-      total_created: z.number(),
-    },
+      user_stories_created: z.array(z.object({
+        user_story_id: z.number(),
+        title: z.string(),
+        success: z.boolean()
+      })),
+      total_created: z.number()
+    }
   },
   async ({ user_stories }) => {
     try {
@@ -415,12 +379,7 @@ server.registerTool(
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const results: {
-        user_story_id: number | null;
-        title: string;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const results: { user_story_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const userStory of user_stories) {
         try {
           const result = stmt.run(
@@ -430,185 +389,146 @@ server.registerTool(
             userStory.acceptance_criteria || null,
             userStory.story_points || null,
             userStory.assigned_to || null,
-            "productmanager",
+            'productmanager'
           );
           results.push({
             user_story_id: result.lastInsertRowid as number,
             title: userStory.title,
-            success: true,
+            success: true
           });
         } catch (error) {
           results.push({
             user_story_id: null,
             title: userStory.title,
             success: false,
-            error: error.message,
+            error: error.message
           });
         }
       }
 
-      const successful = results.filter((r) => r.success);
+      const successful = results.filter(r => r.success);
       const output = {
         user_stories_created: successful,
-        total_created: successful.length,
+        total_created: successful.length
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          {
-            type: "text",
-            text: `Error creating user stories: ${error.message}`,
-          },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error creating user stories: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
-
+ 
 // Tool: Create Tasks
 server.registerTool(
-  "create_tasks",
+  'create_tasks',
   {
-    title: "Create Tasks",
-    description: "Create multiple tasks in the SDLC tracker",
+    title: 'Create Tasks',
+    description: 'Create multiple tasks in the SDLC tracker',
     inputSchema: {
-      tasks: z
-        .array(
-          z.object({
-            user_story_id: z.number().optional(),
-            title: z.string().min(1, "Title is required"),
-            description: z.string().optional(),
-            assigned_to: z.enum(["architect", "developer"]).optional(),
-            estimated_hours: z.number().optional(),
-          }),
-        )
-        .min(1, "At least one task is required"),
-    },
-    outputSchema: {
-      tasks_created: z.array(
-        z.object({
-          task_id: z.number(),
-          title: z.string(),
-          success: z.boolean(),
-          error: z.string().optional(),
-        }),
-      ),
-      total_created: z.number(),
-    },
+      tasks: z.array(z.object({
+        user_story_id: z.number().optional(),
+        title: z.string().min(1, 'Title is required'),
+        description: z.string().optional(),
+        assigned_to: z.enum(['architect', 'developer']).optional(),
+        estimated_hours: z.number().optional()
+       })).min(1, 'At least one task is required')
+     },
+     outputSchema: {
+       tasks_created: z.array(z.object({
+         task_id: z.number(),
+         title: z.string(),
+         success: z.boolean(),
+         error: z.string().optional()
+       })),
+       total_created: z.number()
+     }
   },
-  async ({ tasks }) => {
-    try {
-      const database = getDatabase();
+   async ({ tasks }) => {
+     try {
+       const database = getDatabase();
       const stmt = database.prepare(`
          INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, created_by)
          VALUES (?, ?, ?, ?, ?, ?)
        `);
 
-      const results: {
-        task_id: number | null;
-        title: string;
-        success: boolean;
-        error?: string;
-      }[] = [];
-      for (const task of tasks) {
-        try {
-          const result = stmt.run(
-            task.user_story_id || null,
-            task.title,
-            task.description || null,
-            task.assigned_to || "architect",
-            task.estimated_hours || null,
-            "architect",
-          );
-          results.push({
-            task_id: result.lastInsertRowid as number,
-            title: task.title,
-            success: true,
-          });
-        } catch (error) {
-          results.push({
-            task_id: null,
-            title: task.title,
-            success: false,
-            error: error.message,
-          });
-        }
-      }
+       const results: { task_id: number | null; title: string; success: boolean; error?: string }[] = [];
+       for (const task of tasks) {
+         try {
+           const result = stmt.run(
+             task.user_story_id || null,
+             task.title,
+             task.description || null,
+             task.assigned_to || 'architect',
+             task.estimated_hours || null,
+             'architect'
+           );
+           results.push({
+             task_id: result.lastInsertRowid as number,
+             title: task.title,
+             success: true
+           });
+         } catch (error) {
+           results.push({
+             task_id: null,
+             title: task.title,
+             success: false,
+             error: error.message
+           });
+         }
+       }
 
-      const successful = results.filter((r) => r.success);
-      const output = {
-        tasks_created: results,
-        total_created: successful.length,
-      };
+      const successful = results.filter(r => r.success);
+       const output = {
+         tasks_created: results,
+         total_created: successful.length
+       };
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
-      };
-    } catch (error) {
-      return {
-        content: [
-          { type: "text", text: `Error creating tasks: ${error.message}` },
-        ],
-        isError: true,
-      };
+       return {
+         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+         structuredContent: output
+       };
+     } catch (error) {
+       return {
+         content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
+         isError: true
+       };
     }
-  },
-);
+   }
+ );
 
 // Tool: Create Bugs
 server.registerTool(
-  "create_bugs",
+  'create_bugs',
   {
-    title: "Create Bugs",
-    description:
-      "Create multiple bug reports with severity levels, reporter, and assignee information",
+    title: 'Create Bugs',
+    description: 'Create multiple bug reports with severity levels, reporter, and assignee information',
     inputSchema: {
-      bugs: z
-        .array(
-          z.object({
-            user_story_id: z.number().optional(),
-            task_id: z.number().optional(),
-            title: z.string().min(1, "Title is required"),
-            description: z.string().optional(),
-            severity: z.enum(["Critical", "High", "Medium", "Low"]),
-            reported_by: z.enum([
-              "productmanager",
-              "programmanager",
-              "developer",
-              "tester",
-              "architect",
-            ]),
-            assigned_to: z
-              .enum([
-                "productmanager",
-                "programmanager",
-                "developer",
-                "tester",
-                "architect",
-              ])
-              .optional(),
-          }),
-        )
-        .min(1, "At least one bug is required"),
+      bugs: z.array(z.object({
+        user_story_id: z.number().optional(),
+        task_id: z.number().optional(),
+        title: z.string().min(1, 'Title is required'),
+        description: z.string().optional(),
+        severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
+        reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
+        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional()
+      })).min(1, 'At least one bug is required')
     },
     outputSchema: {
-      bugs_created: z.array(
-        z.object({
-          bug_id: z.number(),
-          title: z.string(),
-          success: z.boolean(),
-          error: z.string().optional(),
-        }),
-      ),
-      total_created: z.number(),
-    },
+      bugs_created: z.array(z.object({
+        bug_id: z.number(),
+        title: z.string(),
+        success: z.boolean(),
+        error: z.string().optional()
+      })),
+      total_created: z.number()
+    }
   },
   async ({ bugs }) => {
     try {
@@ -618,12 +538,7 @@ server.registerTool(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const results: {
-        bug_id: number | null;
-        title: string;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const results: { bug_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const bug of bugs) {
         try {
           const result = stmt.run(
@@ -634,65 +549,59 @@ server.registerTool(
             bug.severity,
             bug.reported_by,
             bug.assigned_to || null,
-            "tester",
+            'tester'
           );
           results.push({
             bug_id: result.lastInsertRowid as number,
             title: bug.title,
-            success: true,
+            success: true
           });
         } catch (error) {
           results.push({
             bug_id: null,
             title: bug.title,
             success: false,
-            error: error.message,
+            error: error.message
           });
         }
       }
 
-      const successful = results.filter((r) => r.success);
+      const successful = results.filter(r => r.success);
       const output = {
         bugs_created: results,
-        total_created: successful.length,
+        total_created: successful.length
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error creating bugs: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error creating bugs: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Create Test Cases
 server.registerTool(
-  "create_test_cases",
+  'create_test_cases',
   {
-    title: "Create Test Cases",
-    description: "Create multiple test cases in the SDLC tracker",
+    title: 'Create Test Cases',
+    description: 'Create multiple test cases in the SDLC tracker',
     inputSchema: {
-      test_cases: z
-        .array(
-          z.object({
-            user_story_id: z.number().optional(),
-            title: z.string().min(1, "Title is required"),
-            description: z.string().optional(),
-            preconditions: z.string().optional(),
-            steps: z.string().min(1, "Steps are required"),
-            expected_result: z.string().min(1, "Expected result is required"),
-            assigned_to: z.enum(["tester", "productmanager"]).optional(),
-          }),
-        )
-        .min(1, "At least one test case is required"),
-    },
+      test_cases: z.array(z.object({
+        user_story_id: z.number().optional(),
+        title: z.string().min(1, 'Title is required'),
+        description: z.string().optional(),
+        preconditions: z.string().optional(),
+        steps: z.string().min(1, 'Steps are required'),
+        expected_result: z.string().min(1, 'Expected result is required'),
+        assigned_to: z.enum(['tester', 'productmanager']).optional()
+      })).min(1, 'At least one test case is required')
+    }
   },
   async ({ test_cases }) => {
     try {
@@ -702,12 +611,7 @@ server.registerTool(
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const results: {
-        test_case_id: number | null;
-        title: string;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const results: { test_case_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const testCase of test_cases) {
         try {
           const result = stmt.run(
@@ -717,87 +621,66 @@ server.registerTool(
             testCase.preconditions || null,
             testCase.steps,
             testCase.expected_result,
-            testCase.assigned_to || "tester",
+            testCase.assigned_to || 'tester'
           );
           results.push({
             test_case_id: result.lastInsertRowid as number,
             title: testCase.title,
-            success: true,
+            success: true
           });
         } catch (error) {
           results.push({
             test_case_id: null,
             title: testCase.title,
             success: false,
-            error: error.message,
+            error: error.message
           });
         }
       }
 
-      const successful = results.filter((r) => r.success);
+      const successful = results.filter(r => r.success);
       const output = {
         test_cases_created: results,
-        total_created: successful.length,
+        total_created: successful.length
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error creating test cases: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error creating test cases: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Create Comments
 server.registerTool(
-  "create_comments",
+  'create_comments',
   {
-    title: "Create Comments",
-    description:
-      "Create multiple comments on SDLC entities for stakeholder feedback",
+    title: 'Create Comments',
+    description: 'Create multiple comments on SDLC entities for stakeholder feedback',
     inputSchema: {
-      comments: z
-        .array(
-          z.object({
-            entity_type: z.enum([
-              "epic",
-              "user_story",
-              "task",
-              "bug",
-              "test_case",
-            ]),
-            entity_id: z.number(),
-            comment_text: z.string().min(1, "Comment text is required"),
-            author: z.enum([
-              "productmanager",
-              "programmanager",
-              "developer",
-              "tester",
-              "architect",
-            ]),
-          }),
-        )
-        .min(1, "At least one comment is required"),
+      comments: z.array(z.object({
+        entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
+        entity_id: z.number(),
+        comment_text: z.string().min(1, 'Comment text is required'),
+        author: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+      })).min(1, 'At least one comment is required')
     },
     outputSchema: {
-      comments_created: z.array(
-        z.object({
-          comment_id: z.number().optional(),
-          entity_type: z.string(),
-          entity_id: z.number(),
-          success: z.boolean(),
-          error: z.string().optional(),
-        }),
-      ),
-      total_created: z.number(),
-    },
+      comments_created: z.array(z.object({
+        comment_id: z.number().optional(),
+        entity_type: z.string(),
+        entity_id: z.number(),
+        success: z.boolean(),
+        error: z.string().optional()
+      })),
+      total_created: z.number()
+    }
   },
   async ({ comments }) => {
     try {
@@ -807,118 +690,101 @@ server.registerTool(
         VALUES (?, ?, ?, ?)
       `);
 
-      const results: {
-        comment_id?: number;
-        entity_type: string;
-        entity_id: number;
-        success: boolean;
-        error?: string;
-      }[] = [];
+      const results: { comment_id?: number; entity_type: string; entity_id: number; success: boolean; error?: string }[] = [];
       for (const comment of comments) {
         try {
           // Check if entity exists
           const tableName = {
-            epic: "epics",
-            user_story: "user_stories",
-            task: "tasks",
-            bug: "bugs",
-            test_case: "test_cases",
+            epic: 'epics',
+            user_story: 'user_stories',
+            task: 'tasks',
+            bug: 'bugs',
+            test_case: 'test_cases'
           }[comment.entity_type];
-          const entityCheck = database
-            .prepare(`SELECT id FROM ${tableName} WHERE id = ?`)
-            .get(comment.entity_id);
+          const entityCheck = database.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
           if (!entityCheck) {
             results.push({
               comment_id: undefined,
               entity_type: comment.entity_type,
               entity_id: comment.entity_id,
               success: false,
-              error: `${comment.entity_type} with id ${comment.entity_id} not found`,
+              error: `${comment.entity_type} with id ${comment.entity_id} not found`
             });
             continue;
           }
 
-          const result = stmt.run(
-            comment.entity_type,
-            comment.entity_id,
-            comment.comment_text,
-            comment.author,
-          );
+          const result = stmt.run(comment.entity_type, comment.entity_id, comment.comment_text, comment.author);
           results.push({
             comment_id: result.lastInsertRowid as number,
             entity_type: comment.entity_type,
             entity_id: comment.entity_id,
-            success: true,
+            success: true
           });
         } catch (error) {
           results.push({
             entity_type: comment.entity_type,
             entity_id: comment.entity_id,
             success: false,
-            error: error.message,
+            error: error.message
           });
         }
       }
 
-      const successful = results.filter((r) => r.success);
+      const successful = results.filter(r => r.success);
       const output = {
         comments_created: results,
-        total_created: successful.length,
+        total_created: successful.length
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error creating comments: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error creating comments: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: List Epics
 server.registerTool(
-  "list_epics",
+  'list_epics',
   {
-    title: "List Epics",
-    description: "List epics with optional filtering",
+    title: 'List Epics',
+    description: 'List epics with optional filtering',
     inputSchema: {
-      status: z.enum(["New", "Open", "Closed"]).optional(),
-      limit: z.number().min(1).max(100).optional(),
+      status: z.enum(['New', 'Open', 'Closed']).optional(),
+      limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      epics: z.array(
-        z.object({
-          id: z.number(),
-          title: z.string(),
-          description: z.string().nullable(),
-          status: z.string(),
-          owner: z.string(),
-          assigned_to: z.string().nullable(),
-          created_at: z.string(),
-          updated_at: z.string(),
-        }),
-      ),
-      count: z.number(),
-    },
+      epics: z.array(z.object({
+        id: z.number(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        owner: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
+      count: z.number()
+    }
   },
   async ({ status, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = "SELECT * FROM epics WHERE 1=1";
+      let query = 'SELECT * FROM epics WHERE 1=1';
       const params: any[] = [];
 
       if (status) {
-        query += " AND status = ?";
+        query += ' AND status = ?';
         params.push(status);
       }
 
-      query += " ORDER BY created_at DESC LIMIT ?";
+      query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = database.prepare(query);
@@ -926,138 +792,120 @@ server.registerTool(
 
       const output = {
         epics,
-        count: epics.length,
+        count: epics.length
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error listing epics: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error listing epics: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: List User Stories
 server.registerTool(
-  "list_user_stories",
+  'list_user_stories',
   {
-    title: "List User Stories",
-    description: "List user stories with optional filtering",
+    title: 'List User Stories',
+    description: 'List user stories with optional filtering',
     inputSchema: {
       epic_id: z.number().optional(),
-      status: z.enum(["New", "In Progress", "QA", "UAT", "Closed"]).optional(),
-      assigned_to: z
-        .enum(["productmanager", "architect", "developer", "tester"])
-        .optional(),
+      status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
+      assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      data: z.array(
-        z.object({
-          id: z.number(),
-          epic_id: z.number().nullable(),
-          title: z.string(),
-          description: z.string().nullable(),
-          acceptance_criteria: z.string().nullable(),
-          status: z.string(),
-          current_owner: z.string(),
-          assigned_to: z.string().nullable(),
-          story_points: z.number().nullable(),
-          phase: z.string().nullable(),
-          phase_status: z.string().nullable(),
-          created_at: z.string(),
-          updated_at: z.string(),
-        }),
-      ),
+      data: z.array(z.object({
+        id: z.number(),
+        epic_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        acceptance_criteria: z.string().nullable(),
+        status: z.string(),
+        current_owner: z.string(),
+        assigned_to: z.string().nullable(),
+        story_points: z.number().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
       total_count: z.number(),
       filtered_count: z.number(),
-      phase_context: z
-        .object({
-          current_phase: z.string(),
-          phase_status: z.string(),
-          active_stakeholders: z.array(z.string()),
-        })
-        .optional(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
       applied_filters: z.record(z.any()),
-      pagination: z
-        .object({
-          limit: z.number(),
-          offset: z.number(),
-          has_more: z.boolean(),
-        })
-        .optional(),
-    },
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
+    }
   },
   async ({ epic_id, status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = "SELECT * FROM user_stories WHERE 1=1";
+      let query = 'SELECT * FROM user_stories WHERE 1=1';
       const params: any[] = [];
 
       if (epic_id) {
-        query += " AND epic_id = ?";
+        query += ' AND epic_id = ?';
         params.push(epic_id);
       }
 
       if (status) {
-        query += " AND status = ?";
+        query += ' AND status = ?';
         params.push(status);
       }
 
       if (assigned_to) {
-        query += " AND assigned_to = ?";
+        query += ' AND assigned_to = ?';
         params.push(assigned_to);
       }
 
       if (phase) {
         if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => "?").join(",")})`;
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
           params.push(...phase);
         } else {
-          query += " AND phase = ?";
+          query += ' AND phase = ?';
           params.push(phase);
         }
       }
 
       if (phase_status) {
         if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => "?").join(",")})`;
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
           params.push(...phase_status);
         } else {
-          query += " AND phase_status = ?";
+          query += ' AND phase_status = ?';
           params.push(phase_status);
         }
       }
 
-      query += " ORDER BY created_at DESC LIMIT ?";
+      query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = database.prepare(query);
       const user_stories = stmt.all(...params);
 
       // Calculate phase context
-      const phaseContext =
-        user_stories.length > 0
-          ? {
-              current_phase: user_stories[0].phase || "Not Set",
-              phase_status: user_stories[0].phase_status || "New",
-              active_stakeholders: [
-                "productmanager",
-                "architect",
-                "developer",
-                "tester",
-              ],
-            }
-          : undefined;
+      const phaseContext = user_stories.length > 0 ? {
+        current_phase: user_stories[0].phase || 'Not Set',
+        phase_status: user_stories[0].phase_status || 'New',
+        active_stakeholders: ['productmanager', 'architect', 'developer', 'tester']
+      } : undefined;
 
       const appliedFilters: { [key: string]: any } = {};
       if (epic_id) appliedFilters.epic_id = epic_id;
@@ -1072,170 +920,126 @@ server.registerTool(
         filtered_count: user_stories.length,
         phase_context: phaseContext,
         applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false },
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          {
-            type: "text",
-            text: `Error listing user stories: ${error.message}`,
-          },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error listing user stories: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: List Bugs
 server.registerTool(
-  "list_bugs",
+  'list_bugs',
   {
-    title: "List Bugs",
-    description: "List bugs with optional filtering",
+    title: 'List Bugs',
+    description: 'List bugs with optional filtering',
     inputSchema: {
-      status: z.enum(["Open", "In Progress", "Fixed", "Closed"]).optional(),
-      severity: z.enum(["Critical", "High", "Medium", "Low"]).optional(),
-      reported_by: z
-        .enum([
-          "productmanager",
-          "programmanager",
-          "developer",
-          "tester",
-          "architect",
-        ])
-        .optional(),
-      assigned_to: z
-        .enum([
-          "productmanager",
-          "programmanager",
-          "developer",
-          "tester",
-          "architect",
-        ])
-        .optional(),
+      status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional(),
+      severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
+      reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+      assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      data: z.array(
-        z.object({
-          id: z.number(),
-          user_story_id: z.number().nullable(),
-          task_id: z.number().nullable(),
-          title: z.string(),
-          description: z.string().nullable(),
-          status: z.string(),
-          severity: z.string(),
-          reported_by: z.string(),
-          assigned_to: z.string().nullable(),
-          phase: z.string().nullable(),
-          phase_status: z.string().nullable(),
-          created_at: z.string(),
-          updated_at: z.string(),
-        }),
-      ),
+      data: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        task_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        severity: z.string(),
+        reported_by: z.string(),
+        assigned_to: z.string().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
       total_count: z.number(),
       filtered_count: z.number(),
-      phase_context: z
-        .object({
-          current_phase: z.string(),
-          phase_status: z.string(),
-          active_stakeholders: z.array(z.string()),
-        })
-        .optional(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
       applied_filters: z.record(z.any()),
-      pagination: z
-        .object({
-          limit: z.number(),
-          offset: z.number(),
-          has_more: z.boolean(),
-        })
-        .optional(),
-    },
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
+    }
   },
-  async ({
-    status,
-    severity,
-    reported_by,
-    assigned_to,
-    phase,
-    phase_status,
-    limit = 50,
-  }) => {
+  async ({ status, severity, reported_by, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = "SELECT * FROM bugs WHERE 1=1";
+      let query = 'SELECT * FROM bugs WHERE 1=1';
       const params: any[] = [];
 
       if (status) {
-        query += " AND status = ?";
+        query += ' AND status = ?';
         params.push(status);
       }
 
       if (severity) {
-        query += " AND severity = ?";
+        query += ' AND severity = ?';
         params.push(severity);
       }
 
       if (reported_by) {
-        query += " AND reported_by = ?";
+        query += ' AND reported_by = ?';
         params.push(reported_by);
       }
 
       if (assigned_to) {
-        query += " AND assigned_to = ?";
+        query += ' AND assigned_to = ?';
         params.push(assigned_to);
       }
 
       if (phase) {
         if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => "?").join(",")})`;
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
           params.push(...phase);
         } else {
-          query += " AND phase = ?";
+          query += ' AND phase = ?';
           params.push(phase);
         }
       }
 
       if (phase_status) {
         if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => "?").join(",")})`;
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
           params.push(...phase_status);
         } else {
-          query += " AND phase_status = ?";
+          query += ' AND phase_status = ?';
           params.push(phase_status);
         }
       }
 
-      query += " ORDER BY created_at DESC LIMIT ?";
+      query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = database.prepare(query);
       const bugs = stmt.all(...params);
 
       // Calculate phase context
-      const phaseContext =
-        bugs.length > 0
-          ? {
-              current_phase: bugs[0].phase || "Not Set",
-              phase_status: bugs[0].phase_status || "Open",
-              active_stakeholders: [
-                "productmanager",
-                "programmanager",
-                "developer",
-                "tester",
-                "architect",
-              ],
-            }
-          : undefined;
+      const phaseContext = bugs.length > 0 ? {
+        current_phase: bugs[0].phase || 'Not Set',
+        phase_status: bugs[0].phase_status || 'Open',
+        active_stakeholders: ['productmanager', 'programmanager', 'developer', 'tester', 'architect']
+      } : undefined;
 
       const appliedFilters: { [key: string]: any } = {};
       if (status) appliedFilters.status = status;
@@ -1251,122 +1055,111 @@ server.registerTool(
         filtered_count: bugs.length,
         phase_context: phaseContext,
         applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false },
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error listing bugs: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error listing bugs: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: List Test Cases
 server.registerTool(
-  "list_test_cases",
+  'list_test_cases',
   {
-    title: "List Test Cases",
-    description: "List test cases with optional filtering",
+    title: 'List Test Cases',
+    description: 'List test cases with optional filtering',
     inputSchema: {
-      status: z.enum(["New", "Passed", "Failed"]).optional(),
-      assigned_to: z.enum(["tester", "productmanager"]).optional(),
+      status: z.enum(['New', 'Passed', 'Failed']).optional(),
+      assigned_to: z.enum(['tester', 'productmanager']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
-      data: z.array(
-        z.object({
-          id: z.number(),
-          user_story_id: z.number().nullable(),
-          title: z.string(),
-          description: z.string().nullable(),
-          status: z.string(),
-          assigned_to: z.string().nullable(),
-          phase: z.string().nullable(),
-          phase_status: z.string().nullable(),
-          created_at: z.string(),
-          updated_at: z.string(),
-        }),
-      ),
+      data: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        assigned_to: z.string().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
       total_count: z.number(),
       filtered_count: z.number(),
-      phase_context: z
-        .object({
-          current_phase: z.string(),
-          phase_status: z.string(),
-          active_stakeholders: z.array(z.string()),
-        })
-        .optional(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
       applied_filters: z.record(z.any()),
-      pagination: z
-        .object({
-          limit: z.number(),
-          offset: z.number(),
-          has_more: z.boolean(),
-        })
-        .optional(),
-    },
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
+    }
   },
   async ({ status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = "SELECT * FROM test_cases WHERE 1=1";
+      let query = 'SELECT * FROM test_cases WHERE 1=1';
       const params: any[] = [];
 
       if (status) {
-        query += " AND status = ?";
+        query += ' AND status = ?';
         params.push(status);
       }
 
       if (assigned_to) {
-        query += " AND assigned_to = ?";
+        query += ' AND assigned_to = ?';
         params.push(assigned_to);
       }
 
       if (phase) {
         if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => "?").join(",")})`;
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
           params.push(...phase);
         } else {
-          query += " AND phase = ?";
+          query += ' AND phase = ?';
           params.push(phase);
         }
       }
 
       if (phase_status) {
         if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => "?").join(",")})`;
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
           params.push(...phase_status);
         } else {
-          query += " AND phase_status = ?";
+          query += ' AND phase_status = ?';
           params.push(phase_status);
         }
       }
 
-      query += " ORDER BY created_at DESC LIMIT ?";
+      query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = database.prepare(query);
       const test_cases = stmt.all(...params);
 
       // Calculate phase context
-      const phaseContext =
-        test_cases.length > 0
-          ? {
-              current_phase: test_cases[0].phase || "Not Set",
-              phase_status: test_cases[0].phase_status || "New",
-              active_stakeholders: ["tester", "productmanager"],
-            }
-          : undefined;
+      const phaseContext = test_cases.length > 0 ? {
+        current_phase: test_cases[0].phase || 'Not Set',
+        phase_status: test_cases[0].phase_status || 'New',
+        active_stakeholders: ['tester', 'productmanager']
+      } : undefined;
 
       const appliedFilters: { [key: string]: any } = {};
       if (status) appliedFilters.status = status;
@@ -1380,217 +1173,223 @@ server.registerTool(
         filtered_count: test_cases.length,
         phase_context: phaseContext,
         applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false },
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error listing test cases: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error listing test cases: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Update Entity Status
 server.registerTool(
-  "update_entity_status",
+  'update_entity_status',
   {
-    title: "Update Entity Status",
-    description:
-      "Update the status of any SDLC entity (epic, user_story, task, bug, test_case)",
+    title: 'Update Entity Status and Assignment',
+    description: 'Update the status and/or assignment of any SDLC entity (epic, user_story, task, bug, test_case)',
     inputSchema: {
-      entity_type: z.enum(["epic", "user_story", "task", "bug", "test_case"]),
+      entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
       entity_id: z.number(),
-      status: z.string(), // Will be validated by database CHECK constraints
-      transitioned_by: z.enum([
-        "productmanager",
-        "programmanager",
-        "developer",
-        "tester",
-        "architect",
-      ]),
+      status: z.string().optional(), // Will be validated by database CHECK constraints
+      assigned_to: z.string().optional(), // Will be validated by database CHECK constraints
+      transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
     },
     outputSchema: {
       success: z.boolean(),
       entity_type: z.string(),
       entity_id: z.number(),
       old_status: z.string().nullable(),
-      new_status: z.string(),
-    },
+      new_status: z.string().nullable(),
+      old_assigned_to: z.string().nullable(),
+      new_assigned_to: z.string().nullable()
+    }
   },
-  async ({ entity_type, entity_id, status, transitioned_by }) => {
+  async ({ entity_type, entity_id, status, assigned_to, transitioned_by }) => {
     try {
       const tableName = {
-        epic: "epics",
-        user_story: "user_stories",
-        task: "tasks",
-        bug: "bugs",
-        test_case: "test_cases",
+        epic: 'epics',
+        user_story: 'user_stories',
+        task: 'tasks',
+        bug: 'bugs',
+        test_case: 'test_cases'
       }[entity_type];
-      // Get current status
+      // Get current status and assigned_to
       const database = getDatabase();
-      const currentStmt = database.prepare(
-        `SELECT status FROM ${tableName} WHERE id = ?`,
-      );
-      const current = currentStmt.get(entity_id) as
-        | { status: string }
-        | undefined;
+      const currentStmt = database.prepare(`SELECT status, assigned_to FROM ${tableName} WHERE id = ?`);
+      const current = currentStmt.get(entity_id) as { status: string; assigned_to: string } | undefined;
 
       if (!current) {
         return {
-          content: [{ type: "text", text: `${entity_type} not found` }],
-          isError: true,
+          content: [{ type: 'text', text: `${entity_type} not found` }],
+          isError: true
         };
       }
 
-      // Update status
+      // Build update query dynamically
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (status !== undefined) {
+        updates.push('status = ?');
+        params.push(status);
+      }
+
+      if (assigned_to !== undefined) {
+        updates.push('assigned_to = ?');
+        params.push(assigned_to);
+      }
+
+      if (updates.length === 0) {
+        return {
+          content: [{ type: 'text', text: `No updates specified for ${entity_type}` }],
+          isError: true
+        };
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+
       const updateStmt = database.prepare(`
         UPDATE ${tableName}
-        SET status = ?, updated_at = CURRENT_TIMESTAMP
+        SET ${updates.join(', ')}
         WHERE id = ?
       `);
-      const result = updateStmt.run(status, entity_id);
+      params.push(entity_id);
+
+      const result = updateStmt.run(...params);
 
       if (result.changes === 0) {
         return {
-          content: [
-            { type: "text", text: `Failed to update ${entity_type} status` },
-          ],
-          isError: true,
+          content: [{ type: 'text', text: `Failed to update ${entity_type}` }],
+          isError: true
         };
       }
 
-      // Record status transition
-      const transitionStmt = database.prepare(`
-        INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      transitionStmt.run(
-        entity_type,
-        entity_id,
-        current.status,
-        status,
-        transitioned_by,
-      );
+      // Record transitions
+      if (status !== undefined && status !== current.status) {
+        const transitionStmt = database.prepare(`
+          INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        transitionStmt.run(entity_type, entity_id, current.status, status, transitioned_by);
+      }
+
+      if (assigned_to !== undefined && assigned_to !== current.assigned_to) {
+        const ownershipStmt = database.prepare(`
+          INSERT INTO ownership_transitions (entity_type, entity_id, from_owner, to_owner, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        ownershipStmt.run(entity_type, entity_id, current.assigned_to, assigned_to, transitioned_by);
+      }
 
       const output = {
         success: true,
         entity_type,
         entity_id,
-        old_status: current.status,
-        new_status: status,
+        old_status: status !== undefined ? current.status : null,
+        new_status: status !== undefined ? status : null,
+        old_assigned_to: assigned_to !== undefined ? current.assigned_to : null,
+        new_assigned_to: assigned_to !== undefined ? assigned_to : null
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          {
-            type: "text",
-            text: `Error updating ${entity_type} status: ${error.message}`,
-          },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error updating ${entity_type}: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: List tasks
 server.registerTool(
-  "list_tasks",
+  'list_tasks',
   {
-    title: "List Tasks",
-    description: "List tasks with optional filtering",
+    title: 'List Tasks',
+    description: 'List tasks with optional filtering',
     inputSchema: {
-      status: z.enum(["New", "In Progress", "Closed"]).optional(),
-      priority: z.enum(["low", "medium", "high"]).optional(),
+      status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+      priority: z.enum(['low', 'medium', 'high']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
       data: z.array(z.any()),
       total_count: z.number(),
       filtered_count: z.number(),
-      phase_context: z
-        .object({
-          current_phase: z.string(),
-          phase_status: z.string(),
-          active_stakeholders: z.array(z.string()),
-        })
-        .optional(),
+      phase_context: z.object({
+        current_phase: z.string(),
+        phase_status: z.string(),
+        active_stakeholders: z.array(z.string())
+      }).optional(),
       applied_filters: z.record(z.any()),
-      pagination: z
-        .object({
-          limit: z.number(),
-          offset: z.number(),
-          has_more: z.boolean(),
-        })
-        .optional(),
-    },
+      pagination: z.object({
+        limit: z.number(),
+        offset: z.number(),
+        has_more: z.boolean()
+      }).optional()
+    }
   },
-  async ({ status, priority, phase, phase_status, limit = 50 }) => {
+   async ({ status, priority, phase, phase_status, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = "SELECT * FROM tasks WHERE 1=1";
+      let query = 'SELECT * FROM tasks WHERE 1=1';
       const params: any[] = [];
 
       if (status) {
-        query += " AND status = ?";
+        query += ' AND status = ?';
         params.push(status);
       }
 
       if (priority) {
-        query += " AND priority = ?";
+        query += ' AND priority = ?';
         params.push(priority);
       }
 
       if (phase) {
         if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => "?").join(",")})`;
+          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
           params.push(...phase);
         } else {
-          query += " AND phase = ?";
+          query += ' AND phase = ?';
           params.push(phase);
         }
       }
 
       if (phase_status) {
         if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => "?").join(",")})`;
+          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
           params.push(...phase_status);
         } else {
-          query += " AND phase_status = ?";
+          query += ' AND phase_status = ?';
           params.push(phase_status);
         }
       }
 
-      query += " ORDER BY created_at DESC LIMIT ?";
+      query += ' ORDER BY created_at DESC LIMIT ?';
       params.push(limit);
 
       const stmt = database.prepare(query);
       const tasks = stmt.all(...params);
 
       // Calculate phase context
-      const phaseContext =
-        tasks.length > 0
-          ? {
-              current_phase: tasks[0].phase || "Not Set",
-              phase_status: tasks[0].phase_status || "New",
-              active_stakeholders: ["architect", "developer"],
-            }
-          : undefined;
+      const phaseContext = tasks.length > 0 ? {
+        current_phase: tasks[0].phase || 'Not Set',
+        phase_status: tasks[0].phase_status || 'New',
+        active_stakeholders: ['architect', 'developer']
+      } : undefined;
 
       const appliedFilters: { [key: string]: any } = {};
       if (status) appliedFilters.status = status;
@@ -1604,38 +1403,36 @@ server.registerTool(
         filtered_count: tasks.length,
         phase_context: phaseContext,
         applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false },
+        pagination: { limit, offset: 0, has_more: false }
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error listing tasks: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
 
 // Tool: Update task status
 server.registerTool(
-  "update_task_status",
+  'update_task_status',
   {
-    title: "Update Task Status",
-    description: "Update the status of an existing task",
+    title: 'Update Task Status',
+    description: 'Update the status of an existing task',
     inputSchema: {
       task_id: z.number(),
-      status: z.enum(["New", "In Progress", "Closed"]),
+      status: z.enum(['pending', 'in_progress', 'completed'])
     },
     outputSchema: {
       success: z.boolean(),
-      task_id: z.number(),
-    },
+      task_id: z.number()
+    }
   },
   async ({ task_id, status }) => {
     try {
@@ -1649,48 +1446,52 @@ server.registerTool(
 
       if (result.changes === 0) {
         return {
-          content: [{ type: "text", text: "Task not found" }],
-          isError: true,
+          content: [{ type: 'text', text: 'Task not found' }],
+          isError: true
         };
       }
 
       const output = {
         success: true,
-        task_id,
+        task_id
       };
 
       return {
-        content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-        structuredContent: output,
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text", text: `Error updating task: ${error.message}` },
-        ],
-        isError: true,
+        content: [{ type: 'text', text: `Error updating task: ${error.message}` }],
+        isError: true
       };
     }
-  },
+  }
 );
+
+
+
+
+
+
 
 // Connect to stdio transport
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error("MCP server connected and ready");
+  console.error('MCP server connected and ready');
 
   // Handle graceful shutdown
-  process.on("SIGINT", () => {
-    console.error("Shutting down MCP server");
+  process.on('SIGINT', () => {
+    console.error('Shutting down MCP server');
     if (db) db.close();
     process.exit(0);
   });
 }
 
 main().catch((error) => {
-  console.error("Server error:", error);
+  console.error('Server error:', error);
   db.close();
   process.exit(1);
 });
