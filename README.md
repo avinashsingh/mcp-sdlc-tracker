@@ -153,7 +153,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `user_story_id`: Foreign key to user_stories (optional)
 - `title`: Task title (required)
 - `description`: Task description (optional)
-- `status`: Status ('New', 'In Progress', 'Closed')
+- `status`: Status ('New', 'In Progress', 'Review', 'Closed')
 - `created_by/current_owner/assigned_to`: Stakeholder assignments ('architect', 'developer')
 - `estimated_hours/actual_hours`: Time tracking (optional)
 - `created_at/updated_at/closed_at`: Timestamps
@@ -205,7 +205,7 @@ The server implements a complete Software Development Lifecycle with proper stak
 ### Entity States & Transitions
 - **Epics**: New → Open → Closed (owned by productmanager)
 - **User Stories**: New → In Progress → QA → UAT → Closed (productmanager → architect → developer → tester → productmanager)
-- **Tasks**: New → In Progress → Closed (architect → developer → architect)
+- **Tasks**: New → In Progress → Review → Closed (architect → developer → architect)
 - **Bugs**: Open → In Progress → Fixed → Closed (any stakeholder can be involved)
 - **Test Cases**: New, Passed, Failed (tester → productmanager → tester)
 

@@ -154,23 +154,23 @@ server.registerTool(
         );
 
         CREATE TABLE IF NOT EXISTS tasks (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_story_id INTEGER,
-          title TEXT NOT NULL,
-          description TEXT,
-          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Closed')),
-          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
-          estimated_hours DECIMAL(5,2),
-          actual_hours DECIMAL(5,2),
-          phase TEXT,
-          phase_status TEXT DEFAULT 'New',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          closed_at DATETIME,
-          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-        );
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           user_story_id INTEGER,
+           title TEXT NOT NULL,
+           description TEXT,
+           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
+           created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
+           estimated_hours DECIMAL(5,2),
+           actual_hours DECIMAL(5,2),
+           phase TEXT,
+           phase_status TEXT DEFAULT 'New',
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           closed_at DATETIME,
+           FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+         );
 
         CREATE TABLE IF NOT EXISTS bugs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -585,7 +585,7 @@ server.registerTool(
       const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
       const taskValidation = validateForeignKeys(database, 'task', taskIds);
 
-      const invalidIds = [];
+      const invalidIds: string[] = [];
       if (!userStoryValidation.valid) {
         invalidIds.push(`user stories: ${userStoryValidation.invalidIds.join(', ')}`);
       }
@@ -1432,7 +1432,7 @@ server.registerTool(
     title: 'List Tasks',
     description: 'List tasks with optional filtering',
     inputSchema: {
-      status: z.enum(['New', 'In Progress', 'Closed']).optional(),
+      status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
       priority: z.enum(['low', 'medium', 'high']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
@@ -1540,7 +1540,7 @@ server.registerTool(
     description: 'Update the status of an existing task',
     inputSchema: {
       task_id: z.number(),
-      status: z.enum(['New', 'In Progress', 'Closed'])
+      status: z.enum(['New', 'In Progress', 'Review', 'Closed'])
     },
     outputSchema: {
       success: z.boolean(),

@@ -39,24 +39,24 @@ db.exec(`
     FOREIGN KEY (epic_id) REFERENCES epics(id)
   );
 
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_story_id INTEGER,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Closed')),
-    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-    assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
-    estimated_hours DECIMAL(5,2),
-    actual_hours DECIMAL(5,2),
-    phase TEXT,
-    phase_status TEXT DEFAULT 'New',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    closed_at DATETIME,
-    FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-  );
+   CREATE TABLE IF NOT EXISTS tasks (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_story_id INTEGER,
+     title TEXT NOT NULL,
+     description TEXT,
+     status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
+     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+     current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+     assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
+     estimated_hours DECIMAL(5,2),
+     actual_hours DECIMAL(5,2),
+     phase TEXT,
+     phase_status TEXT DEFAULT 'New',
+     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+     closed_at DATETIME,
+     FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+   );
 
   CREATE TABLE IF NOT EXISTS bugs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -447,6 +447,22 @@ class TrackerTestSuite {
     }
   }
 
+  async testUpdateTaskStatusToReview() {
+    try {
+      const updateStmt = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result = updateStmt.run('Review', 2);
+      this.assert(result.changes === 1, 'Should update 1 task to Review status');
+
+      const checkStmt = db.prepare('SELECT status FROM tasks WHERE id = ?');
+      const updated = checkStmt.get(2) as { status: string };
+      this.assert(updated.status === 'Review', 'Task status should be Review');
+
+      this.recordTest('testUpdateTaskStatusToReview', true);
+    } catch (error) {
+      this.recordTest('testUpdateTaskStatusToReview', false, error.message);
+    }
+  }
+
   async testFiltering() {
     try {
       // Test epic status filtering
@@ -532,6 +548,7 @@ class TrackerTestSuite {
     await this.testUpdateEntityStatus();
     await this.testUpdateEntityAssignment();
     await this.testUpdateTaskStatus();
+    await this.testUpdateTaskStatusToReview();
 
     // Test advanced features
     await this.testFiltering();
