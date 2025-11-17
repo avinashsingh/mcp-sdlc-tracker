@@ -463,6 +463,58 @@ class TrackerTestSuite {
     }
   }
 
+  async testCreateEntitiesWithPhases() {
+    try {
+      // Test creating user story with phase
+      const userStoryStmt = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, phase, phase_status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const usResult = userStoryStmt.run(1, 'US with Phase', 'Desc', 'Criteria', 5, 'developer', 'Development', 'Planning', 'productmanager');
+      this.assert(usResult.lastInsertRowid === 3, 'Should create user story with phase');
+
+      // Test creating task with phase
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, phase, phase_status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const taskResult = taskStmt.run(3, 'Task with Phase', 'Task desc', 'developer', 4, 'Development', 'In Progress', 'architect');
+      this.assert(taskResult.lastInsertRowid === 3, 'Should create task with phase');
+
+      // Verify phases were set
+      const usCheck = db.prepare('SELECT phase, phase_status FROM user_stories WHERE id = ?').get(3) as { phase: string; phase_status: string };
+      this.assert(usCheck.phase === 'Development', 'User story phase should be set');
+      this.assert(usCheck.phase_status === 'Planning', 'User story phase_status should be set');
+
+      const taskCheck = db.prepare('SELECT phase, phase_status FROM tasks WHERE id = ?').get(3) as { phase: string; phase_status: string };
+      this.assert(taskCheck.phase === 'Development', 'Task phase should be set');
+      this.assert(taskCheck.phase_status === 'In Progress', 'Task phase_status should be set');
+
+      this.recordTest('testCreateEntitiesWithPhases', true);
+    } catch (error) {
+      this.recordTest('testCreateEntitiesWithPhases', false, error.message);
+    }
+  }
+
+  async testUpdateEntityPhases() {
+    try {
+      // Update user story phase
+      const updateStmt = db.prepare('UPDATE user_stories SET phase = ?, phase_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result = updateStmt.run('Testing', 'In Progress', 1);
+      this.assert(result.changes === 1, 'Should update user story phase');
+
+      // Verify phase was updated
+      const checkStmt = db.prepare('SELECT phase, phase_status FROM user_stories WHERE id = ?');
+      const updated = checkStmt.get(1) as { phase: string; phase_status: string };
+      this.assert(updated.phase === 'Testing', 'User story phase should be updated');
+      this.assert(updated.phase_status === 'In Progress', 'User story phase_status should be updated');
+
+      this.recordTest('testUpdateEntityPhases', true);
+    } catch (error) {
+      this.recordTest('testUpdateEntityPhases', false, error.message);
+    }
+  }
+
   async testFiltering() {
     try {
       // Test epic status filtering
@@ -549,6 +601,8 @@ class TrackerTestSuite {
     await this.testUpdateEntityAssignment();
     await this.testUpdateTaskStatus();
     await this.testUpdateTaskStatusToReview();
+    await this.testCreateEntitiesWithPhases();
+    await this.testUpdateEntityPhases();
 
     // Test advanced features
     await this.testFiltering();

@@ -380,7 +380,9 @@ server.registerTool(
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
         story_points: z.number().optional(),
-        assigned_to: z.string().optional()
+        assigned_to: z.string().optional(),
+        phase: z.string().optional(),
+        phase_status: z.string().optional()
       })).min(1, 'At least one user story is required')
     },
     outputSchema: {
@@ -408,8 +410,8 @@ server.registerTool(
       }
 
       const stmt = database.prepare(`
-        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, phase, phase_status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const results: { user_story_id: number | null; title: string; success: boolean; error?: string }[] = [];
@@ -422,6 +424,8 @@ server.registerTool(
             userStory.acceptance_criteria || null,
             userStory.story_points || null,
             userStory.assigned_to || null,
+            userStory.phase || null,
+            userStory.phase_status || null,
             'productmanager'
           );
           results.push({
@@ -470,7 +474,9 @@ server.registerTool(
         title: z.string().min(1, 'Title is required'),
         description: z.string().optional(),
         assigned_to: z.enum(['architect', 'developer']).optional(),
-        estimated_hours: z.number().optional()
+        estimated_hours: z.number().optional(),
+        phase: z.string().optional(),
+        phase_status: z.string().optional()
        })).min(1, 'At least one task is required')
      },
       outputSchema: {
@@ -497,22 +503,24 @@ server.registerTool(
          };
        }
 
-      const stmt = database.prepare(`
-         INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, created_by)
-         VALUES (?, ?, ?, ?, ?, ?)
-       `);
+       const stmt = database.prepare(`
+          INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, phase, phase_status, created_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
 
        const results: { task_id: number | null; title: string; success: boolean; error?: string }[] = [];
        for (const task of tasks) {
          try {
-           const result = stmt.run(
-             task.user_story_id || null,
-             task.title,
-             task.description || null,
-             task.assigned_to || 'architect',
-             task.estimated_hours || null,
-             'architect'
-           );
+            const result = stmt.run(
+              task.user_story_id || null,
+              task.title,
+              task.description || null,
+              task.assigned_to || 'architect',
+              task.estimated_hours || null,
+              task.phase || null,
+              task.phase_status || null,
+              'architect'
+            );
            results.push({
              task_id: result.lastInsertRowid as number,
              title: task.title,
@@ -561,7 +569,9 @@ server.registerTool(
         description: z.string().optional(),
         severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
         reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
-        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional()
+        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.string().optional()
       })).min(1, 'At least one bug is required')
     },
     outputSchema: {
@@ -601,8 +611,8 @@ server.registerTool(
       }
 
       const stmt = database.prepare(`
-        INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, phase, phase_status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const results: { bug_id: number | null; title: string; success: boolean; error?: string }[] = [];
@@ -616,6 +626,8 @@ server.registerTool(
             bug.severity,
             bug.reported_by,
             bug.assigned_to || null,
+            bug.phase || null,
+            bug.phase_status || null,
             'tester'
           );
           results.push({
@@ -666,7 +678,9 @@ server.registerTool(
         preconditions: z.string().optional(),
         steps: z.string().min(1, 'Steps are required'),
         expected_result: z.string().min(1, 'Expected result is required'),
-        assigned_to: z.enum(['tester', 'productmanager']).optional()
+        assigned_to: z.enum(['tester', 'productmanager']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.string().optional()
       })).min(1, 'At least one test case is required')
     },
     outputSchema: {
@@ -694,8 +708,8 @@ server.registerTool(
       }
 
       const stmt = database.prepare(`
-        INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to, phase, phase_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const results: { test_case_id: number | null; title: string; success: boolean; error?: string }[] = [];
@@ -708,7 +722,9 @@ server.registerTool(
             testCase.preconditions || null,
             testCase.steps,
             testCase.expected_result,
-            testCase.assigned_to || 'tester'
+            testCase.assigned_to || 'tester',
+            testCase.phase || null,
+            testCase.phase_status || null
           );
           results.push({
             test_case_id: result.lastInsertRowid as number,
@@ -1313,6 +1329,8 @@ server.registerTool(
       entity_id: z.number(),
       status: z.string().optional(), // Will be validated by database CHECK constraints
       assigned_to: z.string().optional(), // Will be validated by database CHECK constraints
+      phase: z.string().optional(),
+      phase_status: z.string().optional(),
       transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
     },
     outputSchema: {
@@ -1322,10 +1340,14 @@ server.registerTool(
       old_status: z.string().nullable(),
       new_status: z.string().nullable(),
       old_assigned_to: z.string().nullable(),
-      new_assigned_to: z.string().nullable()
+      new_assigned_to: z.string().nullable(),
+      old_phase: z.string().nullable(),
+      new_phase: z.string().nullable(),
+      old_phase_status: z.string().nullable(),
+      new_phase_status: z.string().nullable()
     }
   },
-  async ({ entity_type, entity_id, status, assigned_to, transitioned_by }) => {
+  async ({ entity_type, entity_id, status, assigned_to, phase, phase_status, transitioned_by }) => {
     try {
       const tableName = {
         epic: 'epics',
@@ -1334,10 +1356,10 @@ server.registerTool(
         bug: 'bugs',
         test_case: 'test_cases'
       }[entity_type];
-      // Get current status and assigned_to
+      // Get current status, assigned_to, phase, and phase_status
       const database = getDatabase();
-      const currentStmt = database.prepare(`SELECT status, assigned_to FROM ${tableName} WHERE id = ?`);
-      const current = currentStmt.get(entity_id) as { status: string; assigned_to: string } | undefined;
+      const currentStmt = database.prepare(`SELECT status, assigned_to, phase, phase_status FROM ${tableName} WHERE id = ?`);
+      const current = currentStmt.get(entity_id) as { status: string; assigned_to: string; phase: string; phase_status: string } | undefined;
 
       if (!current) {
         return {
@@ -1358,6 +1380,16 @@ server.registerTool(
       if (assigned_to !== undefined) {
         updates.push('assigned_to = ?');
         params.push(assigned_to);
+      }
+
+      if (phase !== undefined) {
+        updates.push('phase = ?');
+        params.push(phase);
+      }
+
+      if (phase_status !== undefined) {
+        updates.push('phase_status = ?');
+        params.push(phase_status);
       }
 
       if (updates.length === 0) {
@@ -1409,7 +1441,11 @@ server.registerTool(
         old_status: status !== undefined ? current.status : null,
         new_status: status !== undefined ? status : null,
         old_assigned_to: assigned_to !== undefined ? current.assigned_to : null,
-        new_assigned_to: assigned_to !== undefined ? assigned_to : null
+        new_assigned_to: assigned_to !== undefined ? assigned_to : null,
+        old_phase: phase !== undefined ? current.phase : null,
+        new_phase: phase !== undefined ? phase : null,
+        old_phase_status: phase_status !== undefined ? current.phase_status : null,
+        new_phase_status: phase_status !== undefined ? phase_status : null
       };
 
       return {

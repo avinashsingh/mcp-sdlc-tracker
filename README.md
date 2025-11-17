@@ -143,9 +143,11 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `title`: User story title (required)
 - `description`: User story description (optional)
 - `acceptance_criteria`: Acceptance criteria (optional)
-- `status`: Status ('New', 'In Progress', 'QA', 'Closed')
+- `status`: Status ('New', 'In Progress', 'QA', 'UAT', 'Closed')
 - `created_by/current_owner/assigned_to`: Stakeholder assignments (enum)
 - `story_points`: Story point estimate (optional)
+- `phase`: Phase name (optional, nullable)
+- `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/qa_at/closed_at`: Timestamps
 
 #### Tasks Table
@@ -156,6 +158,8 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `status`: Status ('New', 'In Progress', 'Review', 'Closed')
 - `created_by/current_owner/assigned_to`: Stakeholder assignments ('architect', 'developer')
 - `estimated_hours/actual_hours`: Time tracking (optional)
+- `phase`: Phase name (optional, nullable)
+- `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/closed_at`: Timestamps
 
 #### Bugs Table
@@ -166,6 +170,8 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `severity`: Severity level ('Critical', 'High', 'Medium', 'Low')
 - `status`: Status ('Open', 'In Progress', 'Fixed', 'Closed')
 - `reported_by/assigned_to/created_by/current_owner`: Stakeholder assignments (enum)
+- `phase`: Phase name (optional, nullable)
+- `phase_status`: Phase completion status (optional, defaults to 'Open')
 - `created_at/updated_at/fixed_at/closed_at`: Timestamps
 
 #### Test Cases Table
@@ -175,6 +181,8 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `description/preconditions/steps/expected_result`: Test details
 - `status`: Status ('New', 'Passed', 'Failed')
 - `created_by/current_owner/assigned_to`: Stakeholder assignments ('tester', 'productmanager')
+- `phase`: Phase name (optional, nullable)
+- `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/last_run_at/last_run_by`: Timestamps
 
 #### Comments Table
@@ -216,6 +224,15 @@ The server implements a complete Software Development Lifecycle with proper stak
 - **developer**: Development team
 - **tester**: Quality assurance
 
+### Phase Management
+Entities can be assigned to custom phases for project organization:
+- **Phase**: Custom phase name (e.g., "Planning", "Development", "Testing", "Deployment")
+- **Phase Status**: Current status within the phase (e.g., "Not Started", "In Progress", "Completed", "Blocked")
+- **Optional**: Phases are completely optional and don't affect core workflow transitions
+- **Flexible**: Phase names are free-form text, allowing custom project-specific phases
+- **Filtering**: All list operations support filtering by `phase` and `phase_status` parameters
+- **Setting**: Phases can be set during entity creation or updated via `update_entity_status`
+
 ### Comments System
 - Comments can be added to any SDLC entity by any stakeholder
 - Supports threaded discussions and feedback on requirements, implementations, and issues
@@ -241,12 +258,17 @@ Once connected to an MCP client, you can:
 
 ### User Story Creation
 3. "Create user stories: 'As a user, I want to login with email/password' (5 points) and 'As a user, I want to reset my password' (3 points) for epic 1" (Note: Epic ID is validated - invalid references return clear error messages)
-4. "List user stories in progress assigned to developer"
+4. "Create user story with phase: 'Implement user dashboard' (8 points) for epic 1 with phase 'Development' and phase_status 'Planning'"
+5. "List user stories in progress assigned to developer"
+6. "List user stories in 'Development' phase"
 
 ### Task Breakdown
 5. "Create tasks: 'Implement password hashing' (4 hours) and 'Create login UI' (6 hours) for user story 1 assigned to developer" (Note: User story references are validated)
-6. "List tasks that are in progress"
-7. "Update task 1 status to 'Closed'"
+6. "Create task with phase: 'Write unit tests' (3 hours) for user story 1 with phase 'Testing' and phase_status 'Not Started'"
+7. "List tasks that are in progress"
+8. "List tasks in 'Testing' phase with 'Not Started' status"
+9. "Update task 1 status to 'Closed'"
+10. "Update task 2 phase to 'Testing' and phase_status 'In Progress'"
 
 ### Bug Tracking
 7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
