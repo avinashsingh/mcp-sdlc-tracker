@@ -107,23 +107,39 @@
       return iconMap[type] || 'bi-circle';
     }
 
-    function createEntityCard(entity, type, level = 1) {
+    function createEntityCard(entity, type, level = 1, hasChildren = false) {
       const badgeClass = getStatusBadge(entity.status);
       const iconClass = getEntityIcon(type);
       const phaseInfo = entity.phase ? `<span class="phase-indicator ms-2"><i class="bi bi-diagram-3"></i> ${entity.phase}</span>` : '';
       const lastModified = formatDate(entity.updated_at);
+      const entityId = `${type}_${entity.id}`;
+
+      // Comments indicator
+      const commentCount = entity.comment_count || 0;
+      const commentsInfo = commentCount > 0 ?
+        `<span class="text-muted small ms-2 comments-link" style="cursor: pointer;" onclick="showComments('${type}', ${entity.id})" title="Click to view comments">
+          <i class="bi bi-chat me-1"></i>${commentCount}
+        </span>` : '';
+
+      // Expand/collapse button
+      const expandButton = hasChildren ?
+        `<button class="btn btn-sm btn-outline-secondary me-2 expand-btn" data-bs-toggle="collapse" data-bs-target="#collapse_${entityId}" aria-expanded="true">
+          <i class="bi bi-dash"></i>
+        </button>` : '';
 
       return `
         <div class="card entity-card mb-2 hierarchy-level-${level}">
           <div class="card-body py-2">
             <div class="d-flex justify-content-between align-items-center">
               <div class="d-flex align-items-center flex-grow-1">
+                ${expandButton}
                 <i class="bi ${iconClass} text-muted me-2"></i>
                 <div class="flex-grow-1">
                   <div class="d-flex align-items-center mb-1">
                     <span class="fw-medium text-truncate">${entity.title || entity.description || `ID: ${entity.id}`}</span>
                     <span class="badge bg-${badgeClass} ms-2 status-badge">${entity.status}</span>
                     ${phaseInfo}
+                    ${commentsInfo}
                   </div>
                   <div class="last-modified">
                     <i class="bi bi-clock me-1"></i>
@@ -149,37 +165,68 @@
       let html = '';
 
       epicsData.forEach(epic => {
-        html += createEntityCard(epic, 'epic', 1);
+        const hasChildren = epic.userStories && epic.userStories.length > 0;
+        html += createEntityCard(epic, 'epic', 1, hasChildren);
 
-        if (epic.userStories && epic.userStories.length > 0) {
+        if (hasChildren) {
+          const epicCollapseId = `collapse_epic_${epic.id}`;
+          html += `<div class="collapse show" id="${epicCollapseId}">`;
+          html += `<div class="ms-4">`; // Indent children
+
           epic.userStories.forEach(userStory => {
-            html += createEntityCard(userStory, 'user_story', 2);
+            const hasUserStoryChildren = (userStory.tasks && userStory.tasks.length > 0) ||
+                                       (userStory.bugs && userStory.bugs.length > 0) ||
+                                       (userStory.testCases && userStory.testCases.length > 0);
+            html += createEntityCard(userStory, 'user_story', 2, hasUserStoryChildren);
 
-            // Tasks
-            if (userStory.tasks && userStory.tasks.length > 0) {
-              userStory.tasks.forEach(task => {
-                html += createEntityCard(task, 'task', 3);
-              });
-            }
+            if (hasUserStoryChildren) {
+              const userStoryCollapseId = `collapse_user_story_${userStory.id}`;
+              html += `<div class="collapse show" id="${userStoryCollapseId}">`;
+              html += `<div class="ms-4">`; // Indent children
 
-            // Bugs
-            if (userStory.bugs && userStory.bugs.length > 0) {
-              userStory.bugs.forEach(bug => {
-                html += createEntityCard(bug, 'bug', 3);
-              });
-            }
+              // Tasks
+              if (userStory.tasks && userStory.tasks.length > 0) {
+                userStory.tasks.forEach(task => {
+                  html += createEntityCard(task, 'task', 3, false);
+                });
+              }
 
-            // Test Cases
-            if (userStory.testCases && userStory.testCases.length > 0) {
-              userStory.testCases.forEach(testCase => {
-                html += createEntityCard(testCase, 'test_case', 3);
-              });
+              // Bugs
+              if (userStory.bugs && userStory.bugs.length > 0) {
+                userStory.bugs.forEach(bug => {
+                  html += createEntityCard(bug, 'bug', 3, false);
+                });
+              }
+
+              // Test Cases
+              if (userStory.testCases && userStory.testCases.length > 0) {
+                userStory.testCases.forEach(testCase => {
+                  html += createEntityCard(testCase, 'test_case', 3, false);
+                });
+              }
+
+              html += `</div>`; // End user story children indent
+              html += `</div>`; // End user story collapse
             }
           });
+
+          html += `</div>`; // End epic children indent
+          html += `</div>`; // End epic collapse
         }
       });
 
       content.innerHTML = html;
+
+      // Add event listeners for expand/collapse buttons
+      document.querySelectorAll('.expand-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const icon = this.querySelector('i');
+          if (icon) {
+            icon.classList.toggle('bi-dash');
+            icon.classList.toggle('bi-plus');
+          }
+        });
+      });
     }
 
     async function loadData() {
@@ -205,8 +252,62 @@
       }
     }
 
+    async function showComments(entityType, entityId) {
+      try {
+        const response = await fetch(`/api/comments/${entityType}/${entityId}`);
+        const comments = await response.json();
+
+        let commentsHtml = '';
+        if (comments.length === 0) {
+          commentsHtml = '<p class="text-muted mb-0">No comments yet.</p>';
+        } else {
+          comments.forEach(comment => {
+            const commentDate = formatDate(comment.created_at);
+            commentsHtml += `
+              <div class="comment-item mb-3 p-3 bg-light rounded">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <strong class="text-primary">${comment.author}</strong>
+                  <small class="text-muted">${commentDate}</small>
+                </div>
+                <p class="mb-0">${comment.comment_text}</p>
+              </div>
+            `;
+          });
+        }
+
+        // Update modal content
+        document.getElementById('commentsModalLabel').textContent = `Comments for ${entityType.replace('_', ' ')} #${entityId}`;
+        document.getElementById('commentsContent').innerHTML = commentsHtml;
+
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('commentsModal'));
+        modal.show();
+      } catch (error) {
+        console.error('Error loading comments:', error);
+        alert('Failed to load comments. Please try again.');
+      }
+    }
+
     // Load data when page loads
     document.addEventListener('DOMContentLoaded', loadData);
   </script>
+
+  <!-- Comments Modal -->
+  <div class="modal fade" id="commentsModal" tabindex="-1" aria-labelledby="commentsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="commentsModalLabel">Comments</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="commentsContent">
+          <!-- Comments will be loaded here -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

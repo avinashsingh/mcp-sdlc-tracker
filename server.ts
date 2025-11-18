@@ -117,6 +117,11 @@ app.get('/api/epics', async (req, res) => {
         ORDER BY us.created_at DESC
       `).all(epic.id);
 
+      // Get comment count for epic
+      epic.comment_count = database.prepare(`
+        SELECT COUNT(*) as count FROM comments WHERE entity_type = 'epic' AND entity_id = ?
+      `).get(epic.id).count;
+
       // Get tasks, bugs, and test cases for each user story
       for (const userStory of epic.userStories) {
         userStory.tasks = database.prepare(`
@@ -130,6 +135,30 @@ app.get('/api/epics', async (req, res) => {
         userStory.testCases = database.prepare(`
           SELECT * FROM test_cases WHERE user_story_id = ? ORDER BY created_at DESC
         `).all(userStory.id);
+
+        // Get comment count for user story
+        userStory.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'user_story' AND entity_id = ?
+        `).get(userStory.id).count;
+
+        // Get comment counts for tasks, bugs, and test cases
+        userStory.tasks.forEach(task => {
+          task.comment_count = database.prepare(`
+            SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
+          `).get(task.id).count;
+        });
+
+        userStory.bugs.forEach(bug => {
+          bug.comment_count = database.prepare(`
+            SELECT COUNT(*) as count FROM comments WHERE entity_type = 'bug' AND entity_id = ?
+          `).get(bug.id).count;
+        });
+
+        userStory.testCases.forEach(testCase => {
+          testCase.comment_count = database.prepare(`
+            SELECT COUNT(*) as count FROM comments WHERE entity_type = 'test_case' AND entity_id = ?
+          `).get(testCase.id).count;
+        });
       }
     }
 
@@ -165,6 +194,31 @@ app.get('/open-browser', async (req, res) => {
     res.json({ success: true, message: 'Browser opened successfully' });
   } catch (error) {
     res.json({ success: false, error: error.message });
+  }
+});
+
+// Get comments for an entity
+app.get('/api/comments/:entityType/:entityId', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { entityType, entityId } = req.params;
+    const database = getDatabase();
+
+    const comments = database.prepare(`
+      SELECT c.*, u.created_by as author_name
+      FROM comments c
+      LEFT JOIN ${entityType}s u ON c.entity_id = u.id
+      WHERE c.entity_type = ? AND c.entity_id = ?
+      ORDER BY c.created_at DESC
+      LIMIT 10
+    `).all(entityType, parseInt(entityId));
+
+    res.json(comments);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
