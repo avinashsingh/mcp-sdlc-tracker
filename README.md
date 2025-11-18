@@ -115,11 +115,60 @@ Before using any other tools, you must initialize the database:
 
 ### Connecting to MCP Clients
 
-This server uses stdio transport, so it can be connected to any MCP-compatible client such as:
+This server uses stdio transport, so it can be connected to any MCP-compatible client. Below are setup instructions for popular AI coding agents:
 
-- **Claude Code**: `claude mcp add --transport stdio my-tracker "npm start"`
-- **Cursor**: Configure in MCP settings with stdio transport
-- **VS Code**: Configure in MCP settings with stdio transport
+#### Claude Code
+```bash
+claude mcp add --transport stdio my-tracker "npm start"
+```
+
+#### OpenCode
+Add to your OpenCode MCP configuration:
+```json
+{
+  "mcpServers": {
+    "sdlc-tracker": {
+      "command": "npm",
+      "args": ["start"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+#### OpenAI Codex
+Add to `~/.codex/config.toml`:
+```toml
+[[mcp]]
+name = "sdlc-tracker"
+command = "npm"
+args = ["start"]
+cwd = "/path/to/your/project"
+```
+
+#### Windsurf
+Configure in Windsurf's MCP settings with stdio transport and command `npm start`.
+
+#### Cursor
+1. Open Cursor settings
+2. Navigate to MCP section
+3. Add new server with:
+   - Transport: stdio
+   - Command: `npm start`
+   - Working directory: `/path/to/your/project`
+
+#### VS Code
+1. Install an MCP extension (like "MCP" or "Claude Code")
+2. Configure with stdio transport
+3. Set command to `npm start`
+
+#### Other MCP-Compatible Clients
+- **Cline**: Configure in settings with stdio transport
+- **Roo Code**: Add server configuration with `npm start` command
+- **Continue**: Add to config.json with stdio transport
+- **Zed**: Configure in MCP settings panel
+
+For all clients, ensure you're running the command from your project directory where the SDLC tracker database should be initialized.
 
 ## Database Schema
 
