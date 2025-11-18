@@ -389,26 +389,40 @@ server.registerTool(
           FOREIGN KEY (task_id) REFERENCES tasks(id)
         );
 
-        CREATE TABLE IF NOT EXISTS test_cases (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_story_id INTEGER,
-          title TEXT NOT NULL,
-          description TEXT,
-          preconditions TEXT,
-          steps TEXT NOT NULL,
-          expected_result TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
-          created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
-          phase TEXT,
-          phase_status TEXT DEFAULT 'New',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          last_run_at DATETIME,
-          last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-        );
+         CREATE TABLE IF NOT EXISTS test_cases (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           user_story_id INTEGER,
+           title TEXT NOT NULL,
+           description TEXT,
+           preconditions TEXT,
+           steps TEXT NOT NULL,
+           expected_result TEXT NOT NULL,
+           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
+           created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+           phase TEXT,
+           phase_status TEXT DEFAULT 'New',
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           last_run_at DATETIME,
+           last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
+         );
+
+         CREATE TABLE IF NOT EXISTS story_dependencies (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           dependent_story_id INTEGER NOT NULL,
+           dependency_story_id INTEGER NOT NULL,
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+           FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+           FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+
+           CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
+           UNIQUE(dependent_story_id, dependency_story_id)
+         );
 
         CREATE TABLE IF NOT EXISTS comments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -463,13 +477,16 @@ server.registerTool(
 
         -- Phase tracking indexes
         CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
-        CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
-        CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
-        CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
-        CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
-        CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
-        CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
-        CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
+         CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
+         CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+         CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
+         CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
+         CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
+         CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
+         CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
+
+         CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
+         CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
       `);
 
       isInitialized = true;
@@ -1165,6 +1182,8 @@ server.registerTool(
         story_points: z.number().nullable(),
         phase: z.string().nullable(),
         phase_status: z.string().nullable(),
+        dependencies: z.array(z.number()), // Story IDs this story depends on
+        dependent_stories: z.array(z.number()), // Story IDs that depend on this story
         created_at: z.string(),
         updated_at: z.string()
       })),
@@ -1186,6 +1205,8 @@ server.registerTool(
   async ({ epic_id, status, assigned_to, phase, phase_status, limit = 50 }) => {
     try {
       const database = getDatabase();
+
+      // Get filtered stories first
       let query = 'SELECT * FROM user_stories WHERE 1=1';
       const params: any[] = [];
 
@@ -1224,16 +1245,55 @@ server.registerTool(
         }
       }
 
-      query += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(limit);
-
       const stmt = database.prepare(query);
-      const user_stories = stmt.all(...params);
+      let user_stories = stmt.all(...params);
+
+      // Add dependency information to each story
+      user_stories = user_stories.map(story => {
+        // Get dependencies (stories this story depends on)
+        const dependencies = database.prepare(`
+          SELECT dependency_story_id FROM story_dependencies
+          WHERE dependent_story_id = ?
+          ORDER BY created_at
+        `).all(story.id).map((dep: any) => dep.dependency_story_id);
+
+        // Get dependent stories (stories that depend on this story)
+        const dependent_stories = database.prepare(`
+          SELECT dependent_story_id FROM story_dependencies
+          WHERE dependency_story_id = ?
+          ORDER BY created_at
+        `).all(story.id).map((dep: any) => dep.dependent_story_id);
+
+        return {
+          ...story,
+          dependencies,
+          dependent_stories
+        };
+      });
+
+      // Smart ordering: stories with least/fewest dependencies first
+      user_stories.sort((a, b) => {
+        const aDeps = a.dependencies.length;
+        const bDeps = b.dependencies.length;
+
+        // Stories with no dependencies come first
+        if (aDeps === 0 && bDeps > 0) return -1;
+        if (bDeps === 0 && aDeps > 0) return 1;
+
+        // Then sort by number of dependencies (ascending)
+        if (aDeps !== bDeps) return aDeps - bDeps;
+
+        // Finally by creation date (oldest first)
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+
+      // Apply limit after sorting
+      const limited_stories = user_stories.slice(0, limit);
 
       // Calculate phase context
-      const phaseContext = user_stories.length > 0 ? {
-        current_phase: user_stories[0].phase || 'Not Set',
-        phase_status: user_stories[0].phase_status || 'New',
+      const phaseContext = limited_stories.length > 0 ? {
+        current_phase: limited_stories[0].phase || 'Not Set',
+        phase_status: limited_stories[0].phase_status || 'New',
         active_stakeholders: ['productmanager', 'architect', 'developer', 'tester']
       } : undefined;
 
@@ -1245,12 +1305,12 @@ server.registerTool(
       if (phase_status) appliedFilters.phase_status = phase_status;
 
       const output = {
-        data: user_stories,
+        data: limited_stories,
         total_count: user_stories.length,
-        filtered_count: user_stories.length,
+        filtered_count: limited_stories.length,
         phase_context: phaseContext,
         applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false }
+        pagination: { limit, offset: 0, has_more: user_stories.length > limit }
       };
 
       return {
@@ -1768,6 +1828,154 @@ server.registerTool(
     }
   }
 );
+
+// Tool: Manage story dependencies
+server.registerTool(
+  'manage_story_dependencies',
+  {
+    title: 'Manage Story Dependencies',
+    description: 'Add or remove dependencies for multiple user stories in bulk',
+    inputSchema: {
+      operations: z.array(z.object({
+        story_id: z.number(),
+        action: z.enum(['add', 'remove']),
+        dependency_story_ids: z.array(z.number()).min(1)
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        story_id: z.number(),
+        success: z.boolean(),
+        action: z.string(),
+        added_dependencies: z.array(z.number()).optional(),
+        removed_dependencies: z.array(z.number()).optional(),
+        errors: z.array(z.string()).optional()
+      }))
+    }
+  },
+  async ({ operations }) => {
+    try {
+      const database = getDatabase();
+      const results: any[] = [];
+
+      // Process operations in a transaction
+      const transaction = database.transaction(() => {
+        operations.forEach(operation => {
+          const { story_id, action, dependency_story_ids } = operation;
+          const result = {
+            story_id,
+            success: true,
+            action,
+            added_dependencies: [] as number[],
+            removed_dependencies: [] as number[],
+            errors: [] as string[]
+          };
+
+          try {
+            // Validate story exists
+            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(story_id);
+            if (!story) {
+              result.success = false;
+              result.errors.push(`Story ${story_id} not found`);
+              results.push(result);
+              return;
+            }
+
+            dependency_story_ids.forEach(depStoryId => {
+              // Validate dependency story exists
+              const depStory = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(depStoryId);
+              if (!depStory) {
+                result.errors.push(`Dependency story ${depStoryId} not found`);
+                return;
+              }
+
+              // Prevent self-dependency
+              if (story_id === depStoryId) {
+                result.errors.push(`Cannot create self-dependency for story ${story_id}`);
+                return;
+              }
+
+              // Check for circular dependencies
+              if (wouldCreateCircularDependency(database, story_id, depStoryId)) {
+                result.errors.push(`Circular dependency detected with story ${depStoryId}`);
+                return;
+              }
+
+              if (action === 'add') {
+                // Insert dependency (ignore if already exists)
+                database.prepare(`
+                  INSERT OR IGNORE INTO story_dependencies
+                  (dependent_story_id, dependency_story_id, created_by)
+                  VALUES (?, ?, ?)
+                `).run(story_id, depStoryId, 'productmanager');
+
+                result.added_dependencies.push(depStoryId);
+
+              } else if (action === 'remove') {
+                // Remove dependency
+                const deleteResult = database.prepare(`
+                  DELETE FROM story_dependencies
+                  WHERE dependent_story_id = ? AND dependency_story_id = ?
+                `).run(story_id, depStoryId);
+
+                if (deleteResult.changes > 0) {
+                  result.removed_dependencies.push(depStoryId);
+                } else {
+                  result.errors.push(`Dependency on story ${depStoryId} not found`);
+                }
+              }
+            });
+
+            if (result.errors.length > 0) {
+              result.success = false;
+            }
+
+          } catch (error) {
+            result.success = false;
+            result.errors.push(error.message);
+          }
+
+          results.push(result);
+        });
+      });
+
+      transaction();
+
+      return {
+        content: [{ type: 'text', text: `Processed ${operations.length} dependency operations` }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to manage story dependencies: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Circular dependency detection function
+function wouldCreateCircularDependency(database: any, storyId: number, dependencyId: number): boolean {
+  const visited = new Set<number>();
+  const stack = [dependencyId];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    if (visited.has(currentId)) continue;
+    if (currentId === storyId) return true; // Circular dependency found
+
+    visited.add(currentId);
+
+    // Find all stories that currentId depends on
+    const dependencies = database.prepare(`
+      SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
+    `).all(currentId);
+
+    stack.push(...dependencies.map((d: any) => d.dependency_story_id));
+  }
+
+  return false;
+}
 
 // Tool: Update task status
 server.registerTool(

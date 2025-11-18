@@ -42,6 +42,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 ### Workflow Management
 - `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
 - `update_task_status`: Update task status
+- `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
@@ -185,6 +186,14 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/last_run_at/last_run_by`: Timestamps
 
+#### Story Dependencies Table
+- `id`: Primary key (auto-increment)
+- `dependent_story_id`: Foreign key to user_stories (story that depends on another)
+- `dependency_story_id`: Foreign key to user_stories (story being depended upon)
+- `created_at`: Timestamp when dependency was created
+- `created_by`: Stakeholder who created the dependency
+- **Constraints**: No self-dependencies, no duplicate dependencies, cascade delete
+
 #### Comments Table
 - `id`: Primary key (auto-increment)
 - `entity_type`: Type of entity ('epic', 'user_story', 'task', 'bug', 'test_case')
@@ -223,6 +232,14 @@ The server implements a complete Software Development Lifecycle with proper stak
 - **architect**: Solution architecture
 - **developer**: Development team
 - **tester**: Quality assurance
+
+### Story Dependencies
+Stories can have dependencies on other stories to model complex project relationships:
+- **Many-to-Many Relationships**: One story can depend on multiple stories, and multiple stories can depend on one story
+- **Dependency Validation**: Prevents circular dependencies and self-dependencies
+- **Smart Ordering**: `list_user_stories` returns stories with least/fewest dependencies first
+- **Bulk Management**: Add/remove dependencies for multiple stories in single operations
+- **Visual Indicators**: Dependency counts shown in UI with clickable links
 
 ### Phase Management
 Entities can be assigned to custom phases for project organization:
@@ -269,6 +286,11 @@ Once connected to an MCP client, you can:
 8. "List tasks in 'Testing' phase with 'Not Started' status"
 9. "Update task 1 status to 'Closed'"
 10. "Update task 2 phase to 'Testing' and phase_status 'In Progress'"
+
+### Story Dependencies
+11. "Add dependencies: Story 2 depends on Story 1, Story 3 depends on Story 2"
+12. "Remove dependency: Story 3 no longer depends on Story 2"
+13. "List user stories ordered by dependencies (least dependent first)"
 
 ### Bug Tracking
 7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
