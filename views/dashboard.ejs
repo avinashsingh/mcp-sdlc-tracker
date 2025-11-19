@@ -578,29 +578,6 @@
                 <div class="mt-2 p-3 bg-light rounded">${entity.acceptance_criteria}</div>
               </div>
             ` : ''}
-            ${entity.dependencies && entity.dependencies.length > 0 ? `
-              <div class="mb-3">
-                <strong>Dependencies:</strong>
-                <div class="mt-2">
-                  ${entity.dependencies.map(depId => {
-                    const route = type === 'user_story' ? 'story' : 'epic';
-                    const label = type === 'user_story' ? 'Story' : 'Epic';
-                    return `<a href="#" onclick="navigateTo('/${route}/${depId}')" class="badge bg-info me-1">${label} #${depId}</a>`;
-                  }).join('')}
-                </div>
-              </div>
-            ` : ''}
-            ${(entity.dependent_stories && entity.dependent_stories.length > 0) || (entity.dependent_epics && entity.dependent_epics.length > 0) ? `
-              <div class="mb-3">
-                <strong>Depended By:</strong>
-                <div class="mt-2">
-                  ${[
-                    ...(entity.dependent_stories || []).map(depId => `<a href="#" onclick="navigateTo('/story/${depId}')" class="badge bg-secondary me-1">Story #${depId}</a>`),
-                    ...(entity.dependent_epics || []).map(depId => `<a href="#" onclick="navigateTo('/epic/${depId}')" class="badge bg-secondary me-1">Epic #${depId}</a>`)
-                  ].join('')}
-                </div>
-              </div>
-            ` : ''}
             <div class="row mb-3">
               <div class="col-md-4">
                 <strong>Tasks:</strong> ${entity.task_count || 0}
@@ -747,6 +724,31 @@
             ` : ''}
 
             ${attributesHtml}
+
+            ${entity.dependencies && entity.dependencies.length > 0 ? `
+              <div class="mb-3">
+                <strong>Dependencies:</strong>
+                <div class="mt-2">
+                  ${entity.dependencies.map(depId => {
+                    const route = entityType === 'user_story' ? 'story' : 'epic';
+                    const label = entityType === 'user_story' ? 'Story' : 'Epic';
+                    return `<a href="#" onclick="navigateTo('/${route}/${depId}')" class="badge bg-info me-1">${label} #${depId}</a>`;
+                  }).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${(entity.dependent_stories && entity.dependent_stories.length > 0) || (entity.dependent_epics && entity.dependent_epics.length > 0) ? `
+              <div class="mb-3">
+                <strong>Depended By:</strong>
+                <div class="mt-2">
+                  ${[
+                    ...(entity.dependent_stories || []).map(depId => `<a href="#" onclick="navigateTo('/story/${depId}')" class="badge bg-secondary me-1">Story #${depId}</a>`),
+                    ...(entity.dependent_epics || []).map(depId => `<a href="#" onclick="navigateTo('/epic/${depId}')" class="badge bg-secondary me-1">Epic #${depId}</a>`)
+                  ].join('')}
+                </div>
+              </div>
+            ` : ''}
           </div>
         </div>
 

@@ -164,21 +164,36 @@ app.get('/api/epics', async (req, res) => {
       ORDER BY e.created_at DESC
     `).all();
 
-    // Get user stories for each epic
-    for (const epic of epics) {
-      epic.userStories = database.prepare(`
-        SELECT us.*,
-               COUNT(t.id) as task_count,
-               COUNT(b.id) as bug_count,
-               COUNT(tc.id) as test_case_count
-        FROM user_stories us
-        LEFT JOIN tasks t ON us.id = t.user_story_id
-        LEFT JOIN bugs b ON us.id = b.user_story_id
-        LEFT JOIN test_cases tc ON us.id = tc.user_story_id
-        WHERE us.epic_id = ?
-        GROUP BY us.id
-        ORDER BY us.created_at DESC
-      `).all(epic.id);
+      // Get user stories for each epic
+      for (const epic of epics) {
+        epic.userStories = database.prepare(`
+          SELECT us.*,
+                 COUNT(t.id) as task_count,
+                 COUNT(b.id) as bug_count,
+                 COUNT(tc.id) as test_case_count
+          FROM user_stories us
+          LEFT JOIN tasks t ON us.id = t.user_story_id
+          LEFT JOIN bugs b ON us.id = b.user_story_id
+          LEFT JOIN test_cases tc ON us.id = tc.user_story_id
+          WHERE us.epic_id = ?
+          GROUP BY us.id
+          ORDER BY us.created_at DESC
+        `).all(epic.id);
+
+        // Add dependency information to each user story
+        for (const userStory of epic.userStories) {
+          // Get dependencies (stories this story depends on)
+          const depRows = database.prepare(`
+            SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
+          `).all(userStory.id);
+          userStory.dependencies = depRows.map(row => row.dependency_story_id);
+
+          // Get dependent stories (stories that depend on this story)
+          const depStoryRows = database.prepare(`
+            SELECT dependent_story_id FROM story_dependencies WHERE dependency_story_id = ?
+          `).all(userStory.id);
+          userStory.dependent_stories = depStoryRows.map(row => row.dependent_story_id);
+        }
 
       // Get comment count for epic
       epic.comment_count = database.prepare(`
