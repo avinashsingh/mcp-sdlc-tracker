@@ -20,7 +20,8 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Epic Management
 - `create_epics`: Create multiple epics with title, description, and productmanager assignment
-- `list_epics`: List epics with optional status filtering
+- `list_epics`: List epics with optional status filtering (excludes archived by default)
+- `archive_epic`: Archive epics (product managers only)
 
 ### User Story Management
 - `create_user_stories`: Create multiple user stories with epic association, acceptance criteria, and story points

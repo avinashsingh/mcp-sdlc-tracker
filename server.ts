@@ -315,18 +315,22 @@ server.registerTool(
       // Execute all CREATE TABLE statements
       db.exec(`
         -- Core SDLC Entities
-        CREATE TABLE IF NOT EXISTS epics (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT NOT NULL,
-          description TEXT,
-          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
-          created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to = 'productmanager'),
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          closed_at DATETIME
-        );
+         CREATE TABLE IF NOT EXISTS epics (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           title TEXT NOT NULL,
+           description TEXT,
+           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
+           created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+           assigned_to TEXT CHECK (assigned_to = 'productmanager'),
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           closed_at DATETIME,
+           archived BOOLEAN DEFAULT FALSE,
+           archived_at DATETIME,
+           archived_by TEXT,
+           archive_reason TEXT
+         );
 
         CREATE TABLE IF NOT EXISTS user_stories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1103,6 +1107,7 @@ server.registerTool(
     description: 'List epics with optional filtering',
     inputSchema: {
       status: z.enum(['New', 'Open', 'Closed']).optional(),
+      include_archived: z.boolean().optional(), // Default: false
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
@@ -1113,6 +1118,10 @@ server.registerTool(
         status: z.string(),
         owner: z.string(),
         assigned_to: z.string().nullable(),
+        archived: z.boolean(),
+        archived_at: z.string().nullable(),
+        archived_by: z.string().nullable(),
+        archive_reason: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string()
       })),
@@ -1131,24 +1140,31 @@ server.registerTool(
       })
     }
   },
-   async ({ status, limit = 50 }) => {
-     try {
-       const database = getDatabase();
-       let query = 'SELECT * FROM epics WHERE 1=1';
-       const params: any[] = [];
-       const applied_filters: { [key: string]: any } = {};
+  async ({ status, include_archived = false, limit = 50 }) => {
+    try {
+      const database = getDatabase();
+      let query = 'SELECT * FROM epics WHERE 1=1';
+      const params: any[] = [];
+      const applied_filters: { [key: string]: any } = {};
 
-       if (status) {
-         query += ' AND status = ?';
-         params.push(status);
-         applied_filters.status = status;
-       }
+      // Filter out archived epics by default
+      if (!include_archived) {
+        query += ' AND archived = FALSE';
+      }
 
-       query += ' ORDER BY created_at DESC LIMIT ?';
-       params.push(limit);
+      if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+        applied_filters.status = status;
+      }
 
-       const stmt = database.prepare(query);
-       const epics = stmt.all(...params);
+      applied_filters.include_archived = include_archived;
+
+      query += ' ORDER BY created_at DESC LIMIT ?';
+      params.push(limit);
+
+      const stmt = database.prepare(query);
+      const epics = stmt.all(...params);
 
        const output = {
          data: epics,
@@ -2291,6 +2307,86 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Failed to archive user story: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Archive epic
+server.registerTool(
+  'archive_epic',
+  {
+    title: 'Archive Epic',
+    description: 'Archive an epic (restricted to product managers only)',
+    inputSchema: {
+      epic_id: z.number(),
+      reason: z.string(),
+      archived_by: z.literal('productmanager')
+    },
+    outputSchema: {
+      success: z.boolean(),
+      epic_id: z.number(),
+      archived_at: z.string(),
+      archive_reason: z.string()
+    }
+  },
+  async ({ epic_id, reason, archived_by }) => {
+    try {
+      // Validate user is product manager
+      if (archived_by !== 'productmanager') {
+        return {
+          content: [{ type: 'text', text: 'Only product managers can archive epics' }],
+          isError: true
+        };
+      }
+
+      const database = getDatabase();
+
+      // Get current epic
+      const currentEpic = database.prepare('SELECT archived FROM epics WHERE id = ?').get(epic_id);
+      if (!currentEpic) {
+        return {
+          content: [{ type: 'text', text: `Epic ${epic_id} not found` }],
+          isError: true
+        };
+      }
+
+      // Check if already archived
+      if (currentEpic.archived) {
+        return {
+          content: [{ type: 'text', text: `Epic ${epic_id} is already archived` }],
+          isError: true
+        };
+      }
+
+      // Archive the epic
+      const archivedAt = new Date().toISOString();
+      const result = database.prepare(`
+        UPDATE epics
+        SET archived = TRUE, archived_at = ?, archived_by = ?, archive_reason = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(archivedAt, archived_by, reason, epic_id);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: 'Failed to archive epic' }],
+          isError: true
+        };
+      }
+
+      return {
+        content: [{ type: 'text', text: `Archived epic ${epic_id}` }],
+        structuredContent: {
+          success: true,
+          epic_id,
+          archived_at: archivedAt,
+          archive_reason: reason
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to archive epic: ${error.message}` }],
         isError: true
       };
     }
