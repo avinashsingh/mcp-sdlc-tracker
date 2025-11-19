@@ -207,10 +207,11 @@ app.get('/api/comments/:entityType/:entityId', async (req, res) => {
     const { entityType, entityId } = req.params;
     const database = getDatabase();
 
+    const tableName = entityType === 'user_story' ? 'user_stories' : `${entityType}s`;
     const comments = database.prepare(`
       SELECT c.*, u.created_by as author_name
       FROM comments c
-      LEFT JOIN ${entityType}s u ON c.entity_id = u.id
+      LEFT JOIN ${tableName} u ON c.entity_id = u.id
       WHERE c.entity_type = ? AND c.entity_id = ?
       ORDER BY c.created_at DESC
       LIMIT 10

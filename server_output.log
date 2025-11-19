@@ -1,0 +1,8 @@
+
+> sqlite-mcp-tracker@1.0.0 start
+> tsx server.ts
+
+MCP server connected and ready
+🌐 Web UI available at http://localhost:4404
+⏳ Database not initialized - serving init page
+   Initialize database first, then visit: http://localhost:4404
