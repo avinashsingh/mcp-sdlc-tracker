@@ -243,6 +243,14 @@
           <i class="bi bi-chat me-1"></i>${commentCount}
         </span>` : '';
 
+      // Dependencies indicator (for user stories)
+      let dependenciesInfo = '';
+      if (type === 'user_story' && entity.dependencies && entity.dependencies.length > 0) {
+        dependenciesInfo = `<span class="text-muted small ms-2" title="Depends on ${entity.dependencies.length} other storie(s)">
+          <i class="bi bi-arrow-right-circle me-1"></i>${entity.dependencies.length}
+        </span>`;
+      }
+
       // Expand/collapse button
       const expandButton = hasChildren ?
         `<button class="btn btn-sm btn-outline-secondary me-2 expand-btn" data-bs-toggle="collapse" data-bs-target="#collapse_${entityId}" aria-expanded="true" onclick="event.stopPropagation()">
