@@ -339,14 +339,18 @@ server.registerTool(
           current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
           assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
           story_points INTEGER,
-          phase TEXT,
-          phase_status TEXT DEFAULT 'New',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          tester_at DATETIME,
-          closed_at DATETIME,
-          FOREIGN KEY (epic_id) REFERENCES epics(id)
-        );
+           phase TEXT,
+           phase_status TEXT DEFAULT 'New',
+           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           tester_at DATETIME,
+           closed_at DATETIME,
+           archived BOOLEAN DEFAULT FALSE,
+           archived_at DATETIME,
+           archived_by TEXT,
+           archive_reason TEXT,
+           FOREIGN KEY (epic_id) REFERENCES epics(id)
+         );
 
         CREATE TABLE IF NOT EXISTS tasks (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -422,6 +426,27 @@ server.registerTool(
 
            CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
            UNIQUE(dependent_story_id, dependency_story_id)
+         );
+
+         CREATE TABLE IF NOT EXISTS user_story_content_changes (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           story_id INTEGER NOT NULL,
+           field_name TEXT NOT NULL,
+           old_value TEXT,
+           new_value TEXT,
+           changed_by TEXT NOT NULL,
+           changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           FOREIGN KEY (story_id) REFERENCES user_stories(id)
+         );
+
+         CREATE TABLE IF NOT EXISTS user_story_acceptance_changes (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           story_id INTEGER NOT NULL,
+           old_acceptance_criteria TEXT,
+           new_acceptance_criteria TEXT,
+           changed_by TEXT NOT NULL,
+           changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+           FOREIGN KEY (story_id) REFERENCES user_stories(id)
          );
 
         CREATE TABLE IF NOT EXISTS comments (
@@ -1167,6 +1192,7 @@ server.registerTool(
       assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
       phase: z.union([z.string(), z.array(z.string())]).optional(),
       phase_status: z.union([z.string(), z.array(z.string())]).optional(),
+      include_archived: z.boolean().optional(), // Default: false
       limit: z.number().min(1).max(100).optional()
     },
     outputSchema: {
@@ -1202,13 +1228,16 @@ server.registerTool(
       }).optional()
     }
   },
-  async ({ epic_id, status, assigned_to, phase, phase_status, limit = 50 }) => {
+  async ({ epic_id, status, assigned_to, phase, phase_status, include_archived = false, limit = 50 }) => {
     try {
       const database = getDatabase();
-
-      // Get filtered stories first
       let query = 'SELECT * FROM user_stories WHERE 1=1';
       const params: any[] = [];
+
+      // Filter out archived stories by default
+      if (!include_archived) {
+        query += ' AND archived = FALSE';
+      }
 
       if (epic_id) {
         query += ' AND epic_id = ?';
@@ -1303,6 +1332,7 @@ server.registerTool(
       if (assigned_to) appliedFilters.assigned_to = assigned_to;
       if (phase) appliedFilters.phase = phase;
       if (phase_status) appliedFilters.phase_status = phase_status;
+      appliedFilters.include_archived = include_archived;
 
       const output = {
         data: limited_stories,
@@ -1976,6 +2006,296 @@ function wouldCreateCircularDependency(database: any, storyId: number, dependenc
 
   return false;
 }
+
+// Tool: Update user story content
+server.registerTool(
+  'update_user_story_content',
+  {
+    title: 'Update User Story Content',
+    description: 'Update user story title, description, and story points (acceptance criteria requires separate tool)',
+    inputSchema: {
+      story_id: z.number(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      story_points: z.number().optional(),
+      updated_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      changes: z.array(z.object({
+        field: z.string(),
+        old_value: z.any(),
+        new_value: z.any()
+      }))
+    }
+  },
+  async ({ story_id, title, description, story_points, updated_by }) => {
+    try {
+      const database = getDatabase();
+
+      // Get current story
+      const currentStory = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(story_id);
+      if (!currentStory) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} not found` }],
+          isError: true
+        };
+      }
+
+      // Check if story is archived
+      if (currentStory.archived) {
+        return {
+          content: [{ type: 'text', text: `Cannot update archived user story ${story_id}` }],
+          isError: true
+        };
+      }
+
+      // Build update query
+      const updates: string[] = [];
+      const params: any[] = [];
+      const changes: any[] = [];
+
+      if (title !== undefined && title !== currentStory.title) {
+        updates.push('title = ?');
+        params.push(title);
+        changes.push({
+          field: 'title',
+          old_value: currentStory.title,
+          new_value: title
+        });
+      }
+
+      if (description !== undefined && description !== currentStory.description) {
+        updates.push('description = ?');
+        params.push(description);
+        changes.push({
+          field: 'description',
+          old_value: currentStory.description,
+          new_value: description
+        });
+      }
+
+      if (story_points !== undefined && story_points !== currentStory.story_points) {
+        updates.push('story_points = ?');
+        params.push(story_points);
+        changes.push({
+          field: 'story_points',
+          old_value: currentStory.story_points,
+          new_value: story_points
+        });
+      }
+
+      if (updates.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No changes specified' }],
+          isError: true
+        };
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(story_id);
+
+      // Execute update
+      const updateQuery = `UPDATE user_stories SET ${updates.join(', ')} WHERE id = ?`;
+      const result = database.prepare(updateQuery).run(...params);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: 'Failed to update user story' }],
+          isError: true
+        };
+      }
+
+      // Log changes to audit table
+      changes.forEach(change => {
+        database.prepare(`
+          INSERT INTO user_story_content_changes (story_id, field_name, old_value, new_value, changed_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(story_id, change.field, change.old_value, change.new_value, updated_by);
+      });
+
+      return {
+        content: [{ type: 'text', text: `Updated user story ${story_id} with ${changes.length} changes` }],
+        structuredContent: {
+          success: true,
+          story_id,
+          changes
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to update user story content: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Update user story acceptance criteria
+server.registerTool(
+  'update_user_story_acceptance_criteria',
+  {
+    title: 'Update User Story Acceptance Criteria',
+    description: 'Update user story acceptance criteria (restricted to product managers only)',
+    inputSchema: {
+      story_id: z.number(),
+      acceptance_criteria: z.string(),
+      updated_by: z.literal('productmanager')
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      old_acceptance_criteria: z.string().nullable(),
+      new_acceptance_criteria: z.string()
+    }
+  },
+  async ({ story_id, acceptance_criteria, updated_by }) => {
+    try {
+      // Validate user is product manager
+      if (updated_by !== 'productmanager') {
+        return {
+          content: [{ type: 'text', text: 'Only product managers can update acceptance criteria' }],
+          isError: true
+        };
+      }
+
+      const database = getDatabase();
+
+      // Get current story
+      const currentStory = database.prepare('SELECT acceptance_criteria, archived FROM user_stories WHERE id = ?').get(story_id);
+      if (!currentStory) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} not found` }],
+          isError: true
+        };
+      }
+
+      // Check if story is archived
+      if (currentStory.archived) {
+        return {
+          content: [{ type: 'text', text: `Cannot update archived user story ${story_id}` }],
+          isError: true
+        };
+      }
+
+      // Update acceptance criteria
+      const result = database.prepare(`
+        UPDATE user_stories
+        SET acceptance_criteria = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(acceptance_criteria, story_id);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: 'Failed to update acceptance criteria' }],
+          isError: true
+        };
+      }
+
+      // Log change to audit table
+      database.prepare(`
+        INSERT INTO user_story_acceptance_changes (story_id, old_acceptance_criteria, new_acceptance_criteria, changed_by)
+        VALUES (?, ?, ?, ?)
+      `).run(story_id, currentStory.acceptance_criteria, acceptance_criteria, updated_by);
+
+      return {
+        content: [{ type: 'text', text: `Updated acceptance criteria for user story ${story_id}` }],
+        structuredContent: {
+          success: true,
+          story_id,
+          old_acceptance_criteria: currentStory.acceptance_criteria,
+          new_acceptance_criteria: acceptance_criteria
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to update acceptance criteria: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Archive user story
+server.registerTool(
+  'archive_user_story',
+  {
+    title: 'Archive User Story',
+    description: 'Archive a user story (restricted to product managers only)',
+    inputSchema: {
+      story_id: z.number(),
+      reason: z.string(),
+      archived_by: z.literal('productmanager')
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      archived_at: z.string(),
+      archive_reason: z.string()
+    }
+  },
+  async ({ story_id, reason, archived_by }) => {
+    try {
+      // Validate user is product manager
+      if (archived_by !== 'productmanager') {
+        return {
+          content: [{ type: 'text', text: 'Only product managers can archive user stories' }],
+          isError: true
+        };
+      }
+
+      const database = getDatabase();
+
+      // Get current story
+      const currentStory = database.prepare('SELECT archived FROM user_stories WHERE id = ?').get(story_id);
+      if (!currentStory) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} not found` }],
+          isError: true
+        };
+      }
+
+      // Check if already archived
+      if (currentStory.archived) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} is already archived` }],
+          isError: true
+        };
+      }
+
+      // Archive the story
+      const archivedAt = new Date().toISOString();
+      const result = database.prepare(`
+        UPDATE user_stories
+        SET archived = TRUE, archived_at = ?, archived_by = ?, archive_reason = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(archivedAt, archived_by, reason, story_id);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: 'Failed to archive user story' }],
+          isError: true
+        };
+      }
+
+      return {
+        content: [{ type: 'text', text: `Archived user story ${story_id}` }],
+        structuredContent: {
+          success: true,
+          story_id,
+          archived_at: archivedAt,
+          archive_reason: reason
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to archive user story: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
 
 // Tool: Update task status
 server.registerTool(

@@ -24,7 +24,10 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### User Story Management
 - `create_user_stories`: Create multiple user stories with epic association, acceptance criteria, and story points
-- `list_user_stories`: List user stories with filtering by epic, status, or assignee
+- `list_user_stories`: List user stories with filtering by epic, status, or assignee (excludes archived by default)
+- `update_user_story_content`: Update user story title, description, and story points (all stakeholders)
+- `update_user_story_acceptance_criteria`: Update user story acceptance criteria (product managers only)
+- `archive_user_story`: Archive user stories (product managers only)
 
 ### Task Management
 - `create_tasks`: Create multiple tasks with user story association, time estimates, and architect/developer assignment
@@ -298,6 +301,14 @@ Entities can be assigned to custom phases for project organization:
 - **Flexible**: Phase names are free-form text, allowing custom project-specific phases
 - **Filtering**: All list operations support filtering by `phase` and `phase_status` parameters
 - **Setting**: Phases can be set during entity creation or updated via `update_entity_status`
+
+### User Story Permissions & Archiving
+User stories have restricted update permissions and archiving capabilities:
+- **Content Updates**: All stakeholders can update title, description, and story points
+- **Acceptance Criteria**: Only Product Managers can update acceptance criteria
+- **Archiving**: Only Product Managers can archive user stories with reason tracking
+- **Archived Stories**: Hidden from default views, accessible with `include_archived: true`
+- **Audit Trail**: All content and acceptance criteria changes are fully audited
 
 ### Comments System
 - Comments can be added to any SDLC entity by any stakeholder
