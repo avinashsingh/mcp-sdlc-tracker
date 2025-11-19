@@ -6,10 +6,14 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
-- **Comments System**: Stakeholder feedback and collaboration on all entities
+- **Comments System**: Stakeholder feedback and collaboration on all entities with comment counts
+- **Epic Dependencies**: Epics can depend on other epics (similar to user story dependencies)
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
 - **Audit Trail**: Ownership and status transition tracking
 - **Data Validation**: Comprehensive input validation and foreign key constraint checking
+- **Boolean Field Handling**: Proper boolean conversion for archived fields (true/false instead of 0/1)
+- **HTTP API**: REST endpoints for database initialization and status checking
+- **Web UI**: Dashboard interface with dependency visualization
 - **Error Handling**: Clear error messages for invalid operations and constraint violations
 - **SQLite Backend**: Uses SQLite with better-sqlite3 for efficient operations
 
@@ -48,6 +52,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
 - `update_task_status`: Update task status
 - `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
+- `manage_epic_dependencies`: Add or remove dependencies for multiple epics in bulk
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
@@ -87,6 +92,30 @@ The server includes comprehensive error handling and data validation:
 "FOREIGN KEY constraint failed"
 ```
 
+## HTTP API
+
+The server also provides a REST API for web applications and direct HTTP access:
+
+### Endpoints
+
+- `GET /api/status`: Get database initialization status and server information
+- `POST /api/initialize`: Initialize database with project location
+  - Request: `{"currentProjectLocation": "/path/to/project"}`
+  - Response: Database connection status
+- `GET /api/epics`: List all epics with comment counts and dependencies
+- `GET /api/epic/:id`: Get specific epic details
+- `GET /api/story/:id`: Get specific user story details
+- `GET /api/task/:id`: Get specific task details
+- `GET /api/bug/:id`: Get specific bug details
+- `GET /api/test-case/:id`: Get specific test case details
+- `GET /api/comments/:entityType/:entityId`: Get comments for any entity
+
+### Features
+- **Comment Counts**: All entities include `comment_count` field
+- **Dependency Information**: Epics and user stories include dependency arrays
+- **Boolean Fields**: Proper boolean values (true/false) for archived fields
+- **JSON Responses**: All endpoints return structured JSON data
+
 ## Resources Available
 
 - `database_schema`: Provides information about the database schema and table structures
@@ -113,10 +142,16 @@ npm run dev
 
 ### Initializing the Database
 
-Before using any other tools, you must initialize the database:
+Before using any other tools, you must initialize the database. You have two options:
 
+#### Option 1: MCP Tool (Recommended for AI Agents)
 1. Call the `initialize` tool and provide your current working directory path (e.g., "/Users/username/project")
 2. The tool will create `.project_tracker.db` in that directory and set up all necessary tables
+
+#### Option 2: HTTP API (For Web Applications)
+1. Start the server: `npm start`
+2. Call `POST /api/initialize` with: `{"currentProjectLocation": "/path/to/project"}`
+3. The API will create `.project_tracker.db` and establish the database connection
 
 ### Connecting to MCP Clients
 
@@ -167,6 +202,22 @@ Configure in Windsurf's MCP settings with stdio transport and command `npm start
 2. Configure with stdio transport
 3. Set command to `npm start`
 
+### Web UI Access
+
+The server also provides a web-based dashboard interface:
+
+```bash
+npm start
+# Then visit the URL shown in the console (typically http://localhost:3000)
+```
+
+**Web UI Features:**
+- **Dashboard Overview**: Visual representation of all SDLC entities
+- **Dependency Visualization**: Clickable dependency links for epics and user stories
+- **Comment Counts**: Display of comment counts on all entities
+- **Interactive Navigation**: Click entities to view detailed information
+- **Real-time Updates**: Automatic refresh of data changes
+
 #### Other MCP-Compatible Clients
 - **Cline**: Configure in settings with stdio transport
 - **Roo Code**: Add server configuration with `npm start` command
@@ -191,6 +242,10 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `assigned_to`: Assigned to ('product' only)
 - `created_at/updated_at`: Timestamps
 - `closed_at`: Closure timestamp
+- `archived`: Boolean flag for soft deletion
+- `dependencies`: Array of epic IDs this epic depends on
+- `dependent_epics`: Array of epic IDs that depend on this epic
+- `comment_count`: Number of comments on this epic
 
 #### User Stories Table
 - `id`: Primary key (auto-increment)
@@ -204,6 +259,10 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/qa_at/closed_at`: Timestamps
+- `archived`: Boolean flag for soft deletion
+- `dependencies`: Array of story IDs this story depends on
+- `dependent_stories`: Array of story IDs that depend on this story
+- `comment_count`: Number of comments on this story
 
 #### Tasks Table
 - `id`: Primary key (auto-increment)
@@ -216,6 +275,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/closed_at`: Timestamps
+- `comment_count`: Number of comments on this task
 
 #### Bugs Table
 - `id`: Primary key (auto-increment)
@@ -228,6 +288,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'Open')
 - `created_at/updated_at/fixed_at/closed_at`: Timestamps
+- `comment_count`: Number of comments on this bug
 
 #### Test Cases Table
 - `id`: Primary key (auto-increment)
@@ -239,11 +300,20 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/last_run_at/last_run_by`: Timestamps
+- `comment_count`: Number of comments on this test case
 
 #### Story Dependencies Table
 - `id`: Primary key (auto-increment)
 - `dependent_story_id`: Foreign key to user_stories (story that depends on another)
 - `dependency_story_id`: Foreign key to user_stories (story being depended upon)
+- `created_at`: Timestamp when dependency was created
+- `created_by`: Stakeholder who created the dependency
+- **Constraints**: No self-dependencies, no duplicate dependencies, cascade delete
+
+#### Epic Dependencies Table
+- `id`: Primary key (auto-increment)
+- `dependent_epic_id`: Foreign key to epics (epic that depends on another)
+- `dependency_epic_id`: Foreign key to epics (epic being depended upon)
 - `created_at`: Timestamp when dependency was created
 - `created_by`: Stakeholder who created the dependency
 - **Constraints**: No self-dependencies, no duplicate dependencies, cascade delete
@@ -294,6 +364,14 @@ Stories can have dependencies on other stories to model complex project relation
 - **Smart Ordering**: `list_user_stories` returns stories with least/fewest dependencies first
 - **Bulk Management**: Add/remove dependencies for multiple stories in single operations
 - **Visual Indicators**: Dependency counts shown in UI with clickable links
+
+### Epic Dependencies
+Epics can have dependencies on other epics to model complex project relationships:
+- **Many-to-Many Relationships**: One epic can depend on multiple epics, and multiple epics can depend on one epic
+- **Dependency Validation**: Prevents circular dependencies and self-dependencies
+- **Bulk Management**: Add/remove dependencies for multiple epics in single operations
+- **Visual Indicators**: Dependency counts shown in UI with clickable links
+- **API Support**: Full REST API support for epic dependency management
 
 ### Phase Management
 Entities can be assigned to custom phases for project organization:
@@ -354,6 +432,11 @@ Once connected to an MCP client, you can:
 12. "Remove dependency: Story 3 no longer depends on Story 2"
 13. "List user stories ordered by dependencies (least dependent first)"
 
+### Epic Dependencies
+14. "Add dependencies: Epic 2 depends on Epic 1, Epic 3 depends on Epic 2"
+15. "Remove dependency: Epic 3 no longer depends on Epic 2"
+16. "List epics with dependency information"
+
 ### Bug Tracking
 7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
 8. "List all open bugs with high severity"
@@ -403,6 +486,11 @@ The server is written in TypeScript and uses:
 
 ### Recent Improvements
 
+- **Comment Count Display**: All entities now show comment counts in APIs and MCP tools
+- **Boolean Field Conversion**: Proper boolean handling for archived fields (true/false)
+- **Epic Dependencies**: Full dependency support for epics (similar to user stories)
+- **HTTP API**: REST endpoints for database initialization and entity access
+- **Web UI Enhancements**: Epic dependency visualization in dashboard
 - **Enhanced Error Handling**: Comprehensive validation with clear error messages
 - **Foreign Key Validation**: All entity references are validated before database operations
 - **Consistent API Responses**: All list tools now use standardized response format

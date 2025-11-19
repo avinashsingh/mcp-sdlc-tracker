@@ -17,6 +17,7 @@ const app = express();
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 // Enhanced Universal Filters Interface
 interface UniversalFilters {
@@ -103,6 +104,49 @@ app.get('/api/status', (req, res) => {
     databasePath: dbPath,
     serverPort: httpPort
   });
+});
+
+app.post('/api/initialize', async (req, res) => {
+  try {
+    const { currentProjectLocation } = req.body;
+
+    if (!currentProjectLocation) {
+      return res.status(400).json({
+        success: false,
+        error: 'currentProjectLocation is required'
+      });
+    }
+
+    // Use currentProjectLocation as projectDir and construct dbFilePath
+    const projectDir = currentProjectLocation;
+    const dbFilePath = `${projectDir}/.project_tracker.db`;
+
+    // Check if already initialized
+    if (isInitialized) {
+      return res.json({
+        success: false,
+        message: 'Database already initialized',
+        databasePath: dbPath
+      });
+    }
+
+    // Set db and dbPath
+    db = new Database(dbFilePath);
+    dbPath = dbFilePath;
+    isInitialized = true;
+
+    res.json({
+      success: true,
+      message: 'Database connection established',
+      databasePath: dbFilePath
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 app.get('/api/epics', async (req, res) => {
