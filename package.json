@@ -6,8 +6,8 @@
   "scripts": {
     "start": "tsx server.ts",
     "dev": "tsx --watch server.ts",
-    "test": "tsx test-suite.ts",
-    "test:integration": "tsx integration-test.ts"
+    "test": "tsx tests/test-suite.ts",
+    "test:integration": "tsx tests/integration-test.ts"
   },
   "keywords": [
     "mcp",
