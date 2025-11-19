@@ -7,6 +7,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import open from 'open';
+import { registerAllWikiTools } from './wiki-tools.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -130,14 +131,268 @@ app.post('/api/initialize', async (req, res) => {
       });
     }
 
-    // Set db and dbPath
+    // Initialize database with full schema
     db = new Database(dbFilePath);
     dbPath = dbFilePath;
+
+    // Execute all CREATE TABLE statements (same as MCP tool)
+    db.exec(`
+      -- Core SDLC Entities
+       CREATE TABLE IF NOT EXISTS epics (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         title TEXT NOT NULL,
+         description TEXT,
+         status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
+         created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+         owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+         assigned_to TEXT CHECK (assigned_to = 'productmanager'),
+         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+         closed_at DATETIME,
+         archived BOOLEAN DEFAULT FALSE,
+         archived_at DATETIME,
+         archived_by TEXT,
+         archive_reason TEXT
+       );
+
+      CREATE TABLE IF NOT EXISTS user_stories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        epic_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        acceptance_criteria TEXT,
+        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
+        story_points INTEGER,
+         phase TEXT,
+         phase_status TEXT DEFAULT 'New',
+         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+         tester_at DATETIME,
+         closed_at DATETIME,
+         archived BOOLEAN DEFAULT FALSE,
+         archived_at DATETIME,
+         archived_by TEXT,
+         archive_reason TEXT,
+         FOREIGN KEY (epic_id) REFERENCES epics(id) ON DELETE CASCADE
+       );
+
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_story_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
+        estimated_hours INTEGER,
+        actual_hours INTEGER,
+        phase TEXT,
+        phase_status TEXT DEFAULT 'New',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        closed_at DATETIME,
+        priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS bugs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_story_id INTEGER,
+        task_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
+        status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
+        reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        phase TEXT,
+        phase_status TEXT DEFAULT 'Open',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        fixed_at DATETIME,
+        closed_at DATETIME,
+        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS test_cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_story_id INTEGER,
+        title TEXT NOT NULL,
+        description TEXT,
+        preconditions TEXT,
+        steps TEXT NOT NULL,
+        expected_result TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
+        phase TEXT,
+        phase_status TEXT DEFAULT 'New',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_run_at DATETIME,
+        last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS story_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dependent_story_id INTEGER NOT NULL,
+        dependency_story_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+        FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+        FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+
+        CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
+        UNIQUE(dependent_story_id, dependency_story_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS epic_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dependent_epic_id INTEGER NOT NULL,
+        dependency_epic_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+        FOREIGN KEY (dependent_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+        FOREIGN KEY (dependency_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+
+        CONSTRAINT no_self_epic_dependency CHECK (dependent_epic_id != dependency_epic_id),
+        UNIQUE(dependent_epic_id, dependency_epic_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+        entity_id INTEGER NOT NULL,
+        comment_text TEXT NOT NULL,
+        author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS user_story_content_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        field_name TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (story_id) REFERENCES user_stories(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS user_story_acceptance_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        old_acceptance_criteria TEXT,
+        new_acceptance_criteria TEXT,
+        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (story_id) REFERENCES user_stories(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS entity_changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+        entity_id INTEGER NOT NULL,
+        field_name TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Wiki System Tables
+      CREATE TABLE IF NOT EXISTS wiki_pages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT,
+        tags TEXT,
+        category TEXT CHECK (category IN ('technical', 'process', 'business', 'qa', 'knowledge')),
+        is_template BOOLEAN DEFAULT FALSE,
+        template_name TEXT,
+        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        current_owner TEXT NOT NULL CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+        status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
+        version INTEGER DEFAULT 1,
+        parent_page_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        published_at DATETIME,
+        archived_at DATETIME,
+        archived_by TEXT,
+        FOREIGN KEY (parent_page_id) REFERENCES wiki_pages(id) ON DELETE SET NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        page_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT,
+        tags TEXT,
+        changed_by TEXT NOT NULL,
+        change_reason TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wiki_page_id INTEGER NOT NULL,
+        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+        entity_id INTEGER NOT NULL,
+        link_type TEXT DEFAULT 'related' CHECK (link_type IN ('related', 'documentation', 'requirements', 'design', 'testing')),
+        created_by TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (wiki_page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
+      );
+
+      -- Create indexes for better performance
+      CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
+      CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
+      CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
+      CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
+      CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
+      CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
+      CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
+      CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
+      CREATE INDEX IF NOT EXISTS idx_entity_changes ON entity_changes(entity_type, entity_id);
+
+      -- Wiki indexes
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_category ON wiki_pages(category);
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_status ON wiki_pages(status);
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_links_entity ON wiki_page_links(entity_type, entity_id);
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_revisions_page ON wiki_page_revisions(page_id, version);
+    `);
+
     isInitialized = true;
+
+    // Try to open browser now that database is initialized
+    if (httpPort) {
+      const url = `http://localhost:${httpPort}`;
+      setTimeout(() => tryOpenBrowser(url), 100); // Small delay to ensure server is ready
+    }
 
     res.json({
       success: true,
-      message: 'Database connection established',
+      message: 'Database initialized successfully',
       databasePath: dbFilePath
     });
 
@@ -314,6 +569,181 @@ app.get('/api/comments/:entityType/:entityId', async (req, res) => {
 });
 
 // Get epic details
+// Wiki API Endpoints
+app.get('/api/wiki', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const database = getDatabase();
+    const { status, category, tags, linked_entity_type, linked_entity_id, limit = 50 } = req.query;
+
+    let query = `
+      SELECT wp.*,
+             COUNT(c.id) as comment_count
+      FROM wiki_pages wp
+      LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
+    `;
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (status) {
+      conditions.push('wp.status = ?');
+      params.push(status);
+    }
+
+    if (category) {
+      conditions.push('wp.category = ?');
+      params.push(category);
+    }
+
+    if (tags) {
+      const tagArray = Array.isArray(tags) ? tags : [tags];
+      const tagConditions = tagArray.map(() => 'wp.tags LIKE ?').join(' OR ');
+      conditions.push(`(${tagConditions})`);
+      tagArray.forEach((tag: string) => params.push(`%${tag}%`));
+    }
+
+    if (linked_entity_type && linked_entity_id) {
+      query += `
+        INNER JOIN wiki_page_links wpl ON wp.id = wpl.wiki_page_id
+      `;
+      conditions.push('wpl.entity_type = ? AND wpl.entity_id = ?');
+      params.push(linked_entity_type, linked_entity_id);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    query += `
+      GROUP BY wp.id
+      ORDER BY wp.updated_at DESC
+      LIMIT ?
+    `;
+    params.push(parseInt(limit as string) || 50);
+
+    const stmt = database.prepare(query);
+    const pages = stmt.all(...params);
+
+    // Parse tags JSON and convert booleans
+    pages.forEach(page => {
+      if (page.tags) {
+        try {
+          page.tags = JSON.parse(page.tags);
+        } catch {
+          page.tags = [];
+        }
+      } else {
+        page.tags = [];
+      }
+    });
+
+    res.json(convertSQLiteBooleans(pages));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/wiki/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const database = getDatabase();
+    const { id } = req.params;
+
+    const page = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(parseInt(id));
+    if (!page) {
+      return res.status(404).json({ error: 'Wiki page not found' });
+    }
+
+    // Get comment count
+    page.comment_count = database.prepare(`
+      SELECT COUNT(*) as count FROM comments WHERE entity_type = 'wiki_page' AND entity_id = ?
+    `).get(page.id).count;
+
+    // Get linked entities
+    const links = database.prepare(`
+      SELECT entity_type, entity_id, link_type FROM wiki_page_links WHERE wiki_page_id = ?
+    `).all(page.id);
+    page.linked_entities = links;
+
+    // Parse tags
+    if (page.tags) {
+      try {
+        page.tags = JSON.parse(page.tags);
+      } catch {
+        page.tags = [];
+      }
+    } else {
+      page.tags = [];
+    }
+
+    res.json(convertSQLiteBooleans(page));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/wiki', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const database = getDatabase();
+    const { title, content, summary, tags, category, assigned_to } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+
+    // Generate slug from title
+    const slug = title.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
+
+    // Check if slug already exists
+    const existing = database.prepare('SELECT id FROM wiki_pages WHERE slug = ?').get(slug);
+    if (existing) {
+      return res.status(400).json({ error: 'Wiki page with this title already exists' });
+    }
+
+    const stmt = database.prepare(`
+      INSERT INTO wiki_pages
+      (title, slug, content, summary, tags, category, created_by, current_owner, assigned_to)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const tagsJson = tags ? JSON.stringify(tags) : null;
+    const result = stmt.run(
+      title,
+      slug,
+      content,
+      summary || null,
+      tagsJson,
+      category || null,
+      'productmanager', // Default creator
+      'productmanager', // Default owner
+      assigned_to || null
+    );
+
+    res.json({
+      success: true,
+      wiki_page_id: result.lastInsertRowid,
+      slug
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/epic/:id', async (req, res) => {
   try {
     if (!isInitialized) {
@@ -738,6 +1168,56 @@ server.registerTool(
           transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
         );
+
+        -- Wiki System Tables
+        CREATE TABLE IF NOT EXISTS wiki_pages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          slug TEXT UNIQUE NOT NULL,
+          content TEXT NOT NULL,
+          summary TEXT,
+          tags TEXT,
+          category TEXT CHECK (category IN ('technical', 'process', 'business', 'qa', 'knowledge')),
+          is_template BOOLEAN DEFAULT FALSE,
+          template_name TEXT,
+          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          current_owner TEXT NOT NULL CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
+          version INTEGER DEFAULT 1,
+          parent_page_id INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          published_at DATETIME,
+          archived_at DATETIME,
+          archived_by TEXT,
+          FOREIGN KEY (parent_page_id) REFERENCES wiki_pages(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS wiki_page_revisions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          page_id INTEGER NOT NULL,
+          version INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          summary TEXT,
+          tags TEXT,
+          changed_by TEXT NOT NULL,
+          change_reason TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS wiki_page_links (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          wiki_page_id INTEGER NOT NULL,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+          entity_id INTEGER NOT NULL,
+          link_type TEXT DEFAULT 'related' CHECK (link_type IN ('related', 'documentation', 'requirements', 'design', 'testing')),
+          created_by TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (wiki_page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
+        );
       `);
 
       // Create indexes for performance
@@ -774,6 +1254,13 @@ server.registerTool(
 
           CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
           CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
+
+          -- Wiki indexes
+          CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
+          CREATE INDEX IF NOT EXISTS idx_wiki_pages_category ON wiki_pages(category);
+          CREATE INDEX IF NOT EXISTS idx_wiki_pages_status ON wiki_pages(status);
+          CREATE INDEX IF NOT EXISTS idx_wiki_page_links_entity ON wiki_page_links(entity_type, entity_id);
+          CREATE INDEX IF NOT EXISTS idx_wiki_page_revisions_page ON wiki_page_revisions(page_id, version);
       `);
 
       isInitialized = true;
@@ -799,7 +1286,7 @@ server.registerTool(
       };
     }
   }
-);
+ );
 
 // Tool: Create Epics
 server.registerTool(
@@ -809,61 +1296,56 @@ server.registerTool(
     description: 'Create multiple epics in the SDLC tracker',
     inputSchema: {
       epics: z.array(z.object({
-        title: z.string().min(1, 'Title is required'),
+        title: z.string().min(1),
         description: z.string().optional(),
-        assigned_to: z.literal('productmanager').optional()
-      })).min(1, 'At least one epic is required')
+        assigned_to: z.enum(['productmanager']).optional()
+      })).min(1)
     },
     outputSchema: {
-      epics_created: z.array(z.object({
-        epic_id: z.number(),
-        title: z.string(),
-        success: z.boolean()
-      })),
-      total_created: z.number()
+      results: z.array(z.object({
+        success: z.boolean(),
+        epic_id: z.number().optional(),
+        error: z.string().optional()
+      }))
     }
   },
   async ({ epics }) => {
-    console.error('create_epics called with:', JSON.stringify(epics, null, 2));
     try {
       const database = getDatabase();
-      const stmt = database.prepare(`
-        INSERT INTO epics (title, description, assigned_to)
-        VALUES (?, ?, ?)
-      `);
+      const results = [];
 
-      const results: { epic_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const epic of epics) {
         try {
-          const result = stmt.run(epic.title, epic.description || null, epic.assigned_to || 'productmanager');
+          const stmt = database.prepare(`
+            INSERT INTO epics (title, description, assigned_to, created_by, owner)
+            VALUES (?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            epic.title,
+            epic.description || null,
+            epic.assigned_to || 'productmanager',
+            'productmanager',
+            'productmanager'
+          );
+
           results.push({
-            epic_id: result.lastInsertRowid as number,
-            title: epic.title,
-            success: true
+            success: true,
+            epic_id: result.lastInsertRowid
           });
         } catch (error) {
           results.push({
-            epic_id: null,
-            title: epic.title,
             success: false,
             error: error.message
           });
         }
       }
 
-      const successful = results.filter(r => r.success);
-      const output = {
-        epics_created: results,
-        total_created: successful.length
-      };
-
-      console.error('create_epics returning:', JSON.stringify(output, null, 2));
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${epics.length} epics` }],
+        structuredContent: { results }
       };
     } catch (error) {
-      console.error('create_epics error:', error.message);
       return {
         content: [{ type: 'text', text: `Error creating epics: ${error.message}` }],
         isError: true
@@ -880,83 +1362,79 @@ server.registerTool(
     description: 'Create multiple user stories in the SDLC tracker',
     inputSchema: {
       user_stories: z.array(z.object({
-        epic_id: z.number(),
-        title: z.string().min(1, 'Title is required'),
+        epic_id: z.number().optional(),
+        title: z.string().min(1),
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
         story_points: z.number().optional(),
-        assigned_to: z.string().optional(),
+        assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
         phase: z.string().optional(),
-        phase_status: z.string().optional()
-      })).min(1, 'At least one user story is required')
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+      })).min(1)
     },
     outputSchema: {
-      user_stories_created: z.array(z.object({
-        user_story_id: z.number().nullable(),
-        title: z.string(),
+      results: z.array(z.object({
         success: z.boolean(),
+        user_story_id: z.number().optional(),
         error: z.string().optional()
-      })),
-      total_created: z.number()
+      }))
     }
   },
   async ({ user_stories }) => {
     try {
       const database = getDatabase();
+      const results = [];
 
-      // Validate epic references
-      const epicIds = user_stories.map(us => us.epic_id).filter(id => id !== undefined);
-      const epicValidation = validateForeignKeys(database, 'epic', epicIds);
-      if (!epicValidation.valid) {
-        return {
-          content: [{ type: 'text', text: `Invalid epic IDs: ${epicValidation.invalidIds.join(', ')}` }],
-          isError: true
-        };
-      }
-
-      const stmt = database.prepare(`
-        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, phase, phase_status, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const results: { user_story_id: number | null; title: string; success: boolean; error?: string }[] = [];
-      for (const userStory of user_stories) {
+      for (const story of user_stories) {
         try {
+          // Validate foreign key if epic_id provided
+          if (story.epic_id) {
+            const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(story.epic_id);
+            if (!epic) {
+              results.push({
+                success: false,
+                error: `Invalid epic ID: ${story.epic_id}`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO user_stories (
+              epic_id, title, description, acceptance_criteria, story_points,
+              assigned_to, phase, phase_status, created_by, current_owner
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
           const result = stmt.run(
-            userStory.epic_id || null,
-            userStory.title,
-            userStory.description || null,
-            userStory.acceptance_criteria || null,
-            userStory.story_points || null,
-            userStory.assigned_to || null,
-            userStory.phase || null,
-            userStory.phase_status || null,
+            story.epic_id || null,
+            story.title,
+            story.description || null,
+            story.acceptance_criteria || null,
+            story.story_points || null,
+            story.assigned_to || null,
+            story.phase || null,
+            story.phase_status || 'Not Started',
+            'productmanager',
             'productmanager'
           );
+
           results.push({
-            user_story_id: result.lastInsertRowid as number,
-            title: userStory.title,
-            success: true
+            success: true,
+            user_story_id: result.lastInsertRowid
           });
         } catch (error) {
           results.push({
-            user_story_id: null,
-            title: userStory.title,
             success: false,
             error: error.message
           });
         }
       }
 
-      const successful = results.filter(r => r.success);
-      const output = {
-        user_stories_created: results,
-        total_created: successful.length
-      };
-
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${user_stories.length} user stories` }],
+        structuredContent: { results }
       };
     } catch (error) {
       return {
@@ -966,7 +1444,7 @@ server.registerTool(
     }
   }
 );
- 
+
 // Tool: Create Tasks
 server.registerTool(
   'create_tasks',
@@ -975,210 +1453,83 @@ server.registerTool(
     description: 'Create multiple tasks in the SDLC tracker',
     inputSchema: {
       tasks: z.array(z.object({
-        user_story_id: z.number(),
-        title: z.string().min(1, 'Title is required'),
+        user_story_id: z.number().optional(),
+        title: z.string().min(1),
         description: z.string().optional(),
-        assigned_to: z.enum(['architect', 'developer']).optional(),
         estimated_hours: z.number().optional(),
+        assigned_to: z.enum(['architect', 'developer']).optional(),
+        priority: z.enum(['low', 'medium', 'high']).optional(),
         phase: z.string().optional(),
-        phase_status: z.string().optional()
-       })).min(1, 'At least one task is required')
-     },
-      outputSchema: {
-        tasks_created: z.array(z.object({
-          task_id: z.number().nullable(),
-          title: z.string(),
-          success: z.boolean(),
-          error: z.string().optional()
-        })),
-        total_created: z.number()
-      }
-  },
-   async ({ tasks }) => {
-     try {
-       const database = getDatabase();
-
-       // Validate user story references
-       const userStoryIds = tasks.map(t => t.user_story_id).filter(id => id !== undefined);
-       const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
-       if (!userStoryValidation.valid) {
-         return {
-           content: [{ type: 'text', text: `Invalid user story IDs: ${userStoryValidation.invalidIds.join(', ')}` }],
-           isError: true
-         };
-       }
-
-       const stmt = database.prepare(`
-          INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, phase, phase_status, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-       const results: { task_id: number | null; title: string; success: boolean; error?: string }[] = [];
-       for (const task of tasks) {
-         try {
-            const result = stmt.run(
-              task.user_story_id || null,
-              task.title,
-              task.description || null,
-              task.assigned_to || 'architect',
-              task.estimated_hours || null,
-              task.phase || null,
-              task.phase_status || null,
-              'architect'
-            );
-           results.push({
-             task_id: result.lastInsertRowid as number,
-             title: task.title,
-             success: true
-           });
-         } catch (error) {
-           results.push({
-             task_id: null,
-             title: task.title,
-             success: false,
-             error: error.message
-           });
-         }
-       }
-
-      const successful = results.filter(r => r.success);
-       const output = {
-         tasks_created: results,
-         total_created: successful.length
-       };
-
-       return {
-         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-         structuredContent: output
-       };
-     } catch (error) {
-       return {
-         content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
-         isError: true
-       };
-    }
-  }
-);
-
-// Tool: Manage Epic Dependencies
-server.registerTool(
-  'manage_epic_dependencies',
-  {
-    title: 'Manage Epic Dependencies',
-    description: 'Add or remove dependencies for multiple epics in bulk',
-    inputSchema: {
-      operations: z.array(z.object({
-        epic_id: z.number(),
-        action: z.enum(['add', 'remove']),
-        dependency_epic_ids: z.array(z.number()).min(1)
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
       })).min(1)
     },
     outputSchema: {
       results: z.array(z.object({
-        epic_id: z.number(),
         success: z.boolean(),
-        action: z.string(),
-        added_dependencies: z.array(z.number()).optional(),
-        removed_dependencies: z.array(z.number()).optional(),
-        errors: z.array(z.string()).optional()
+        task_id: z.number().optional(),
+        error: z.string().optional()
       }))
     }
   },
-  async ({ operations }) => {
+  async ({ tasks }) => {
     try {
       const database = getDatabase();
-      const results: any[] = [];
+      const results = [];
 
-      // Process operations in a transaction
-      const transaction = database.transaction(() => {
-        operations.forEach(operation => {
-          const { epic_id, action, dependency_epic_ids } = operation;
-          const result = {
-            epic_id,
-            success: true,
-            action,
-            added_dependencies: [] as number[],
-            removed_dependencies: [] as number[],
-            errors: [] as string[]
-          };
-
-          try {
-            // Validate epic exists
-            const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(epic_id);
-            if (!epic) {
-              result.success = false;
-              result.errors.push(`Epic ${epic_id} not found`);
-              results.push(result);
-              return;
+      for (const task of tasks) {
+        try {
+          // Validate foreign key if user_story_id provided
+          if (task.user_story_id) {
+            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
+            if (!story) {
+              results.push({
+                success: false,
+                error: `Invalid user story ID: ${task.user_story_id}`
+              });
+              continue;
             }
-
-            dependency_epic_ids.forEach(depEpicId => {
-              // Validate dependency epic exists
-              const depEpic = database.prepare('SELECT id FROM epics WHERE id = ?').get(depEpicId);
-              if (!depEpic) {
-                result.errors.push(`Dependency epic ${depEpicId} not found`);
-                return;
-              }
-
-              // Prevent self-dependency
-              if (epic_id === depEpicId) {
-                result.errors.push(`Cannot create self-dependency for epic ${epic_id}`);
-                return;
-              }
-
-              // Check for circular dependencies
-              if (wouldCreateCircularEpicDependency(database, epic_id, depEpicId)) {
-                result.errors.push(`Circular dependency detected with epic ${depEpicId}`);
-                return;
-              }
-
-              if (action === 'add') {
-                // Insert dependency (ignore if already exists)
-                database.prepare(`
-                  INSERT OR IGNORE INTO epic_dependencies
-                  (dependent_epic_id, dependency_epic_id, created_by)
-                  VALUES (?, ?, ?)
-                `).run(epic_id, depEpicId, 'productmanager');
-
-                result.added_dependencies.push(depEpicId);
-
-              } else if (action === 'remove') {
-                // Remove dependency
-                const deleteResult = database.prepare(`
-                  DELETE FROM epic_dependencies
-                  WHERE dependent_epic_id = ? AND dependency_epic_id = ?
-                `).run(epic_id, depEpicId);
-
-                if (deleteResult.changes > 0) {
-                  result.removed_dependencies.push(depEpicId);
-                } else {
-                  result.errors.push(`Dependency on epic ${depEpicId} not found`);
-                }
-              }
-            });
-
-            if (result.errors.length > 0) {
-              result.success = false;
-            }
-
-          } catch (error) {
-            result.success = false;
-            result.errors.push(error.message);
           }
 
-          results.push(result);
-        });
-      });
+          const stmt = database.prepare(`
+            INSERT INTO tasks (
+              user_story_id, title, description, estimated_hours,
+              assigned_to, priority, phase, phase_status, created_by, current_owner
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
 
-      transaction();
+          const result = stmt.run(
+            task.user_story_id || null,
+            task.title,
+            task.description || null,
+            task.estimated_hours || null,
+            task.assigned_to || 'architect',
+            task.priority || 'medium',
+            task.phase || null,
+            task.phase_status || 'Not Started',
+            'architect',
+            'architect'
+          );
+
+          results.push({
+            success: true,
+            task_id: result.lastInsertRowid
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
 
       return {
-        content: [{ type: 'text', text: `Processed ${operations.length} epic dependency operations` }],
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${tasks.length} tasks` }],
         structuredContent: { results }
       };
     } catch (error) {
       return {
-        content: [{ type: 'text', text: `Failed to manage epic dependencies: ${error.message}` }],
+        content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
         isError: true
       };
     }
@@ -1190,64 +1541,66 @@ server.registerTool(
   'create_bugs',
   {
     title: 'Create Bugs',
-    description: 'Create multiple bug reports with severity levels, reporter, and assignee information',
+    description: 'Create multiple bug reports in the SDLC tracker',
     inputSchema: {
       bugs: z.array(z.object({
         user_story_id: z.number().optional(),
         task_id: z.number().optional(),
-        title: z.string().min(1, 'Title is required'),
+        title: z.string().min(1),
         description: z.string().optional(),
         severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
         reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
         assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
         phase: z.string().optional(),
-        phase_status: z.string().optional()
-      })).min(1, 'At least one bug is required')
+        phase_status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional()
+      })).min(1)
     },
     outputSchema: {
-      bugs_created: z.array(z.object({
-        bug_id: z.number().nullable(),
-        title: z.string(),
+      results: z.array(z.object({
         success: z.boolean(),
+        bug_id: z.number().optional(),
         error: z.string().optional()
-      })),
-      total_created: z.number()
+      }))
     }
   },
   async ({ bugs }) => {
     try {
       const database = getDatabase();
+      const results = [];
 
-      // Validate user story and task references
-      const userStoryIds = bugs.map(b => b.user_story_id).filter(id => id !== undefined);
-      const taskIds = bugs.map(b => b.task_id).filter(id => id !== undefined);
-
-      const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
-      const taskValidation = validateForeignKeys(database, 'task', taskIds);
-
-      const invalidIds: string[] = [];
-      if (!userStoryValidation.valid) {
-        invalidIds.push(`user stories: ${userStoryValidation.invalidIds.join(', ')}`);
-      }
-      if (!taskValidation.valid) {
-        invalidIds.push(`tasks: ${taskValidation.invalidIds.join(', ')}`);
-      }
-
-      if (invalidIds.length > 0) {
-        return {
-          content: [{ type: 'text', text: `Invalid foreign key references: ${invalidIds.join('; ')}` }],
-          isError: true
-        };
-      }
-
-      const stmt = database.prepare(`
-        INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, phase, phase_status, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const results: { bug_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const bug of bugs) {
         try {
+          // Validate foreign keys
+          if (bug.user_story_id) {
+            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(bug.user_story_id);
+            if (!story) {
+              results.push({
+                success: false,
+                error: `Invalid user story ID: ${bug.user_story_id}`
+              });
+              continue;
+            }
+          }
+
+          if (bug.task_id) {
+            const task = database.prepare('SELECT id FROM tasks WHERE id = ?').get(bug.task_id);
+            if (!task) {
+              results.push({
+                success: false,
+                error: `Invalid task ID: ${bug.task_id}`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO bugs (
+              user_story_id, task_id, title, description, severity,
+              reported_by, assigned_to, phase, phase_status, created_by, current_owner
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
           const result = stmt.run(
             bug.user_story_id || null,
             bug.task_id || null,
@@ -1257,33 +1610,26 @@ server.registerTool(
             bug.reported_by,
             bug.assigned_to || null,
             bug.phase || null,
-            bug.phase_status || null,
-            'tester'
+            bug.phase_status || 'Open',
+            bug.reported_by,
+            bug.reported_by
           );
+
           results.push({
-            bug_id: result.lastInsertRowid as number,
-            title: bug.title,
-            success: true
+            success: true,
+            bug_id: result.lastInsertRowid
           });
         } catch (error) {
           results.push({
-            bug_id: null,
-            title: bug.title,
             success: false,
             error: error.message
           });
         }
       }
 
-      const successful = results.filter(r => r.success);
-      const output = {
-        bugs_created: results,
-        total_created: successful.length
-      };
-
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${bugs.length} bugs` }],
+        structuredContent: { results }
       };
     } catch (error) {
       return {
@@ -1303,48 +1649,51 @@ server.registerTool(
     inputSchema: {
       test_cases: z.array(z.object({
         user_story_id: z.number().optional(),
-        title: z.string().min(1, 'Title is required'),
+        title: z.string().min(1),
         description: z.string().optional(),
         preconditions: z.string().optional(),
-        steps: z.string().min(1, 'Steps are required'),
-        expected_result: z.string().min(1, 'Expected result is required'),
+        steps: z.string().min(1),
+        expected_result: z.string().min(1),
         assigned_to: z.enum(['tester', 'productmanager']).optional(),
         phase: z.string().optional(),
-        phase_status: z.string().optional()
-      })).min(1, 'At least one test case is required')
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+      })).min(1)
     },
     outputSchema: {
-      test_cases_created: z.array(z.object({
-        test_case_id: z.number().nullable(),
-        title: z.string(),
+      results: z.array(z.object({
         success: z.boolean(),
+        test_case_id: z.number().optional(),
         error: z.string().optional()
-      })),
-      total_created: z.number()
+      }))
     }
   },
   async ({ test_cases }) => {
     try {
       const database = getDatabase();
+      const results = [];
 
-      // Validate user story references
-      const userStoryIds = test_cases.map(tc => tc.user_story_id).filter(id => id !== undefined);
-      const userStoryValidation = validateForeignKeys(database, 'user_story', userStoryIds);
-      if (!userStoryValidation.valid) {
-        return {
-          content: [{ type: 'text', text: `Invalid user story IDs: ${userStoryValidation.invalidIds.join(', ')}` }],
-          isError: true
-        };
-      }
-
-      const stmt = database.prepare(`
-        INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to, phase, phase_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      const results: { test_case_id: number | null; title: string; success: boolean; error?: string }[] = [];
       for (const testCase of test_cases) {
         try {
+          // Validate foreign key if user_story_id provided
+          if (testCase.user_story_id) {
+            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
+            if (!story) {
+              results.push({
+                success: false,
+                error: `Invalid user story ID: ${testCase.user_story_id}`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO test_cases (
+              user_story_id, title, description, preconditions, steps, expected_result,
+              assigned_to, phase, phase_status, created_by, current_owner
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
           const result = stmt.run(
             testCase.user_story_id || null,
             testCase.title,
@@ -1354,32 +1703,26 @@ server.registerTool(
             testCase.expected_result,
             testCase.assigned_to || 'tester',
             testCase.phase || null,
-            testCase.phase_status || null
+            testCase.phase_status || 'Not Started',
+            'tester',
+            'tester'
           );
+
           results.push({
-            test_case_id: result.lastInsertRowid as number,
-            title: testCase.title,
-            success: true
+            success: true,
+            test_case_id: result.lastInsertRowid
           });
         } catch (error) {
           results.push({
-            test_case_id: null,
-            title: testCase.title,
             success: false,
             error: error.message
           });
         }
       }
 
-      const successful = results.filter(r => r.success);
-      const output = {
-        test_cases_created: results,
-        total_created: successful.length
-      };
-
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${test_cases.length} test cases` }],
+        structuredContent: { results }
       };
     } catch (error) {
       return {
@@ -1395,83 +1738,75 @@ server.registerTool(
   'create_comments',
   {
     title: 'Create Comments',
-    description: 'Create multiple comments on SDLC entities for stakeholder feedback',
+    description: 'Create comments on SDLC entities for stakeholder feedback',
     inputSchema: {
       comments: z.array(z.object({
         entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
         entity_id: z.number(),
-        comment_text: z.string().min(1, 'Comment text is required'),
+        comment_text: z.string().min(1),
         author: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
-      })).min(1, 'At least one comment is required')
+      })).min(1)
     },
     outputSchema: {
-      comments_created: z.array(z.object({
-        comment_id: z.number().optional(),
-        entity_type: z.string(),
-        entity_id: z.number(),
+      results: z.array(z.object({
         success: z.boolean(),
+        comment_id: z.number().optional(),
         error: z.string().optional()
-      })),
-      total_created: z.number()
+      }))
     }
   },
   async ({ comments }) => {
     try {
       const database = getDatabase();
-      const stmt = database.prepare(`
-        INSERT INTO comments (entity_type, entity_id, comment_text, author)
-        VALUES (?, ?, ?, ?)
-      `);
+      const results = [];
 
-      const results: { comment_id?: number; entity_type: string; entity_id: number; success: boolean; error?: string }[] = [];
       for (const comment of comments) {
         try {
-          // Check if entity exists
-          const tableName = {
+          // Validate entity exists
+          const entityTable = {
             epic: 'epics',
             user_story: 'user_stories',
             task: 'tasks',
             bug: 'bugs',
             test_case: 'test_cases'
           }[comment.entity_type];
-          const entityCheck = database.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
-          if (!entityCheck) {
+
+          const entity = database.prepare(`SELECT id FROM ${entityTable} WHERE id = ?`).get(comment.entity_id);
+          if (!entity) {
             results.push({
-              comment_id: undefined,
-              entity_type: comment.entity_type,
-              entity_id: comment.entity_id,
               success: false,
-              error: `${comment.entity_type} with id ${comment.entity_id} not found`
+              error: `Invalid ${comment.entity_type} ID: ${comment.entity_id}`
             });
             continue;
           }
 
-          const result = stmt.run(comment.entity_type, comment.entity_id, comment.comment_text, comment.author);
+          const stmt = database.prepare(`
+            INSERT INTO comments (entity_type, entity_id, comment_text, author)
+            VALUES (?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            comment.entity_type,
+            comment.entity_id,
+            comment.comment_text,
+            comment.author
+          );
+
           results.push({
-            comment_id: result.lastInsertRowid as number,
-            entity_type: comment.entity_type,
-            entity_id: comment.entity_id,
-            success: true
+            success: true,
+            comment_id: result.lastInsertRowid
           });
         } catch (error) {
           results.push({
-            entity_type: comment.entity_type,
-            entity_id: comment.entity_id,
             success: false,
             error: error.message
           });
         }
       }
 
-      const successful = results.filter(r => r.success);
-      const output = {
-        comments_created: results,
-        total_created: successful.length
-      };
-
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: `Created ${results.filter(r => r.success).length} of ${comments.length} comments` }],
+        structuredContent: { results }
       };
     } catch (error) {
       return {
@@ -1487,11 +1822,11 @@ server.registerTool(
   'list_epics',
   {
     title: 'List Epics',
-    description: 'List epics with optional filtering',
+    description: 'List epics with optional status filtering (excludes archived by default)',
     inputSchema: {
       status: z.enum(['New', 'Open', 'Closed']).optional(),
-      include_archived: z.boolean().optional(), // Default: false
-      limit: z.number().min(1).max(100).optional()
+      include_archived: z.boolean().default(false),
+      limit: z.number().default(50)
     },
     outputSchema: {
       data: z.array(z.object({
@@ -1499,65 +1834,62 @@ server.registerTool(
         title: z.string(),
         description: z.string().nullable(),
         status: z.string(),
+        created_by: z.string(),
         owner: z.string(),
         assigned_to: z.string().nullable(),
-        archived: z.boolean(),
-        archived_at: z.string().nullable(),
-        archived_by: z.string().nullable(),
-        archive_reason: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string(),
+        archived: z.boolean(),
+        user_story_count: z.number(),
         comment_count: z.number(),
-        dependencies: z.array(z.number()), // Epic IDs this epic depends on
-        dependent_epics: z.array(z.number()) // Epic IDs that depend on this epic
+        dependencies: z.array(z.number()),
+        dependent_epics: z.array(z.number())
       })),
       total_count: z.number(),
-      filtered_count: z.number(),
-      phase_context: z.object({
-        current_phase: z.string(),
-        phase_status: z.string(),
-        active_stakeholders: z.array(z.string())
-      }),
-      applied_filters: z.record(z.any()),
-      pagination: z.object({
-        limit: z.number(),
-        offset: z.number(),
-        has_more: z.boolean()
-      })
+      filtered_count: z.number()
     }
   },
   async ({ status, include_archived = false, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = 'SELECT * FROM epics WHERE 1=1';
-      const params: any[] = [];
-      const applied_filters: { [key: string]: any } = {};
 
-      // Filter out archived epics by default
+      let query = `
+        SELECT e.*,
+               COUNT(us.id) as user_story_count,
+               COUNT(c.id) as comment_count
+        FROM epics e
+        LEFT JOIN user_stories us ON e.id = us.epic_id
+        LEFT JOIN comments c ON c.entity_type = 'epic' AND c.entity_id = e.id
+      `;
+
+      const conditions = [];
+      const params = [];
+
       if (!include_archived) {
-        query += ' AND archived = FALSE';
+        conditions.push('e.archived = 0');
       }
 
       if (status) {
-        query += ' AND status = ?';
+        conditions.push('e.status = ?');
         params.push(status);
-        applied_filters.status = status;
       }
 
-      applied_filters.include_archived = include_archived;
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
 
-      query += ' ORDER BY created_at DESC LIMIT ?';
+      query += `
+        GROUP BY e.id
+        ORDER BY e.created_at DESC
+        LIMIT ?
+      `;
       params.push(limit);
 
       const stmt = database.prepare(query);
       const epics = stmt.all(...params);
 
-      // Add comment count and dependency information to each epic
+      // Add dependency information to each epic
       for (const epic of epics) {
-        epic.comment_count = database.prepare(`
-          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'epic' AND entity_id = ?
-        `).get(epic.id).count;
-
         // Get dependencies (epics this epic depends on)
         const depRows = database.prepare(`
           SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
@@ -1571,24 +1903,13 @@ server.registerTool(
         epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
       }
 
-       const output = {
-          data: convertSQLiteBooleans(epics),
-          total_count: epics.length,
-          filtered_count: epics.length,
-          phase_context: {
-            current_phase: "Not Set",
-            phase_status: "New",
-            active_stakeholders: ["productmanager"]
-          },
-          applied_filters,
-          pagination: {
-            limit,
-            offset: 0,
-            has_more: false
-          }
-        };
+      const output = {
+        data: convertSQLiteBooleans(epics),
+        total_count: epics.length,
+        filtered_count: epics.length
+      };
 
-       return {
+      return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output
       };
@@ -1606,15 +1927,13 @@ server.registerTool(
   'list_user_stories',
   {
     title: 'List User Stories',
-    description: 'List user stories with optional filtering',
+    description: 'List user stories with filtering by epic, status, or assignee (excludes archived by default)',
     inputSchema: {
       epic_id: z.number().optional(),
       status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
       assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
-      phase: z.union([z.string(), z.array(z.string())]).optional(),
-      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      include_archived: z.boolean().optional(), // Default: false
-      limit: z.number().min(1).max(100).optional()
+      include_archived: z.boolean().default(false),
+      limit: z.number().default(50)
     },
     outputSchema: {
       data: z.array(z.object({
@@ -1624,152 +1943,98 @@ server.registerTool(
         description: z.string().nullable(),
         acceptance_criteria: z.string().nullable(),
         status: z.string(),
+        created_by: z.string(),
         current_owner: z.string(),
         assigned_to: z.string().nullable(),
         story_points: z.number().nullable(),
         phase: z.string().nullable(),
         phase_status: z.string().nullable(),
-        dependencies: z.array(z.number()), // Story IDs this story depends on
-        dependent_stories: z.array(z.number()), // Story IDs that depend on this story
         created_at: z.string(),
         updated_at: z.string(),
-        comment_count: z.number()
+        archived: z.boolean(),
+        task_count: z.number(),
+        bug_count: z.number(),
+        test_case_count: z.number(),
+        comment_count: z.number(),
+        dependencies: z.array(z.number()),
+        dependent_stories: z.array(z.number())
       })),
       total_count: z.number(),
-      filtered_count: z.number(),
-      phase_context: z.object({
-        current_phase: z.string(),
-        phase_status: z.string(),
-        active_stakeholders: z.array(z.string())
-      }).optional(),
-      applied_filters: z.record(z.any()),
-      pagination: z.object({
-        limit: z.number(),
-        offset: z.number(),
-        has_more: z.boolean()
-      }).optional()
+      filtered_count: z.number()
     }
   },
-  async ({ epic_id, status, assigned_to, phase, phase_status, include_archived = false, limit = 50 }) => {
+  async ({ epic_id, status, assigned_to, include_archived = false, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = 'SELECT * FROM user_stories WHERE 1=1';
-      const params: any[] = [];
 
-      // Filter out archived stories by default
+      let query = `
+        SELECT us.*,
+               COUNT(t.id) as task_count,
+               COUNT(b.id) as bug_count,
+               COUNT(tc.id) as test_case_count,
+               COUNT(c.id) as comment_count
+        FROM user_stories us
+        LEFT JOIN tasks t ON us.id = t.user_story_id
+        LEFT JOIN bugs b ON us.id = b.user_story_id
+        LEFT JOIN test_cases tc ON us.id = tc.user_story_id
+        LEFT JOIN comments c ON c.entity_type = 'user_story' AND c.entity_id = us.id
+      `;
+
+      const conditions = [];
+      const params = [];
+
       if (!include_archived) {
-        query += ' AND archived = FALSE';
+        conditions.push('us.archived = 0');
       }
 
       if (epic_id) {
-        query += ' AND epic_id = ?';
+        conditions.push('us.epic_id = ?');
         params.push(epic_id);
       }
 
       if (status) {
-        query += ' AND status = ?';
+        conditions.push('us.status = ?');
         params.push(status);
       }
 
       if (assigned_to) {
-        query += ' AND assigned_to = ?';
+        conditions.push('us.assigned_to = ?');
         params.push(assigned_to);
       }
 
-      if (phase) {
-        if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
-          params.push(...phase);
-        } else {
-          query += ' AND phase = ?';
-          params.push(phase);
-        }
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      if (phase_status) {
-        if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
-          params.push(...phase_status);
-        } else {
-          query += ' AND phase_status = ?';
-          params.push(phase_status);
-        }
-      }
+      query += `
+        GROUP BY us.id
+        ORDER BY us.created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit);
 
       const stmt = database.prepare(query);
-      let user_stories = stmt.all(...params);
+      const user_stories = stmt.all(...params);
 
-      // Add dependency information to each story
-      user_stories = user_stories.map(story => {
+      // Add dependency information to each user story
+      for (const story of user_stories) {
         // Get dependencies (stories this story depends on)
-        const dependencies = database.prepare(`
-          SELECT dependency_story_id FROM story_dependencies
-          WHERE dependent_story_id = ?
-          ORDER BY created_at
-        `).all(story.id).map((dep: any) => dep.dependency_story_id);
+        const depRows = database.prepare(`
+          SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
+        `).all(story.id);
+        story.dependencies = depRows.map(row => row.dependency_story_id);
 
         // Get dependent stories (stories that depend on this story)
-        const dependent_stories = database.prepare(`
-          SELECT dependent_story_id FROM story_dependencies
-          WHERE dependency_story_id = ?
-          ORDER BY created_at
-        `).all(story.id).map((dep: any) => dep.dependent_story_id);
-
-        return {
-          ...story,
-          dependencies,
-          dependent_stories
-        };
-      });
-
-      // Smart ordering: stories with least/fewest dependencies first
-      user_stories.sort((a, b) => {
-        const aDeps = a.dependencies.length;
-        const bDeps = b.dependencies.length;
-
-        // Stories with no dependencies come first
-        if (aDeps === 0 && bDeps > 0) return -1;
-        if (bDeps === 0 && aDeps > 0) return 1;
-
-        // Then sort by number of dependencies (ascending)
-        if (aDeps !== bDeps) return aDeps - bDeps;
-
-        // Finally by creation date (oldest first)
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-
-      // Apply limit after sorting
-      const limited_stories = user_stories.slice(0, limit);
-
-      // Add comment count to each story
-      for (const story of limited_stories) {
-        story.comment_count = database.prepare(`
-          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'user_story' AND entity_id = ?
-        `).get(story.id).count;
+        const depStoryRows = database.prepare(`
+          SELECT dependent_story_id FROM story_dependencies WHERE dependency_story_id = ?
+        `).all(story.id);
+        story.dependent_stories = depStoryRows.map(row => row.dependent_story_id);
       }
 
-      // Calculate phase context
-      const phaseContext = limited_stories.length > 0 ? {
-        current_phase: limited_stories[0].phase || 'Not Set',
-        phase_status: limited_stories[0].phase_status || 'New',
-        active_stakeholders: ['productmanager', 'architect', 'developer', 'tester']
-      } : undefined;
-
-      const appliedFilters: { [key: string]: any } = {};
-      if (epic_id) appliedFilters.epic_id = epic_id;
-      if (status) appliedFilters.status = status;
-      if (assigned_to) appliedFilters.assigned_to = assigned_to;
-      if (phase) appliedFilters.phase = phase;
-      if (phase_status) appliedFilters.phase_status = phase_status;
-      appliedFilters.include_archived = include_archived;
-
       const output = {
-        data: convertSQLiteBooleans(limited_stories),
+        data: convertSQLiteBooleans(user_stories),
         total_count: user_stories.length,
-        filtered_count: limited_stories.length,
-        phase_context: phaseContext,
-        applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: user_stories.length > limit }
+        filtered_count: user_stories.length
       };
 
       return {
@@ -1785,99 +2050,135 @@ server.registerTool(
   }
 );
 
+// Tool: List Tasks
+server.registerTool(
+  'list_tasks',
+  {
+    title: 'List Tasks',
+    description: 'List tasks with optional filtering',
+    inputSchema: {
+      user_story_id: z.number().optional(),
+      status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
+      assigned_to: z.enum(['architect', 'developer']).optional(),
+      limit: z.number().default(50)
+    },
+    outputSchema: {
+      data: z.array(z.any()),
+      total_count: z.number(),
+      filtered_count: z.number()
+    }
+  },
+  async ({ user_story_id, status, assigned_to, limit = 50 }) => {
+    try {
+      const database = getDatabase();
+
+      let query = `SELECT * FROM tasks`;
+      const conditions = [];
+      const params = [];
+
+      if (user_story_id) {
+        conditions.push('user_story_id = ?');
+        params.push(user_story_id);
+      }
+
+      if (status) {
+        conditions.push('status = ?');
+        params.push(status);
+      }
+
+      if (assigned_to) {
+        conditions.push('assigned_to = ?');
+        params.push(assigned_to);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ` ORDER BY created_at DESC LIMIT ?`;
+      params.push(limit);
+
+      const stmt = database.prepare(query);
+      const tasks = stmt.all(...params);
+
+      // Add comment count to each task
+      for (const task of tasks) {
+        task.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
+        `).get(task.id).count;
+      }
+
+      const output = {
+        data: convertSQLiteBooleans(tasks),
+        total_count: tasks.length,
+        filtered_count: tasks.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 // Tool: List Bugs
 server.registerTool(
   'list_bugs',
   {
     title: 'List Bugs',
-    description: 'List bugs with optional filtering',
+    description: 'List bugs with optional filtering by status, severity, reporter, assignee',
     inputSchema: {
       status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional(),
       severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
       reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
       assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
-      phase: z.union([z.string(), z.array(z.string())]).optional(),
-      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional()
+      limit: z.number().default(50)
     },
     outputSchema: {
-      data: z.array(z.object({
-        id: z.number(),
-        user_story_id: z.number().nullable(),
-        task_id: z.number().nullable(),
-        title: z.string(),
-        description: z.string().nullable(),
-        status: z.string(),
-        severity: z.string(),
-        reported_by: z.string(),
-        assigned_to: z.string().nullable(),
-        phase: z.string().nullable(),
-        phase_status: z.string().nullable(),
-        created_at: z.string(),
-        updated_at: z.string()
-      })),
+      data: z.array(z.any()),
       total_count: z.number(),
-      filtered_count: z.number(),
-      phase_context: z.object({
-        current_phase: z.string(),
-        phase_status: z.string(),
-        active_stakeholders: z.array(z.string())
-      }).optional(),
-      applied_filters: z.record(z.any()),
-      pagination: z.object({
-        limit: z.number(),
-        offset: z.number(),
-        has_more: z.boolean()
-      }).optional()
+      filtered_count: z.number()
     }
   },
-  async ({ status, severity, reported_by, assigned_to, phase, phase_status, limit = 50 }) => {
+  async ({ status, severity, reported_by, assigned_to, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = 'SELECT * FROM bugs WHERE 1=1';
-      const params: any[] = [];
+
+      let query = `SELECT * FROM bugs`;
+      const conditions = [];
+      const params = [];
 
       if (status) {
-        query += ' AND status = ?';
+        conditions.push('status = ?');
         params.push(status);
       }
 
       if (severity) {
-        query += ' AND severity = ?';
+        conditions.push('severity = ?');
         params.push(severity);
       }
 
       if (reported_by) {
-        query += ' AND reported_by = ?';
+        conditions.push('reported_by = ?');
         params.push(reported_by);
       }
 
       if (assigned_to) {
-        query += ' AND assigned_to = ?';
+        conditions.push('assigned_to = ?');
         params.push(assigned_to);
       }
 
-      if (phase) {
-        if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
-          params.push(...phase);
-        } else {
-          query += ' AND phase = ?';
-          params.push(phase);
-        }
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      if (phase_status) {
-        if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
-          params.push(...phase_status);
-        } else {
-          query += ' AND phase_status = ?';
-          params.push(phase_status);
-        }
-      }
-
-      query += ' ORDER BY created_at DESC LIMIT ?';
+      query += ` ORDER BY created_at DESC LIMIT ?`;
       params.push(limit);
 
       const stmt = database.prepare(query);
@@ -1890,28 +2191,10 @@ server.registerTool(
         `).get(bug.id).count;
       }
 
-      // Calculate phase context
-      const phaseContext = bugs.length > 0 ? {
-        current_phase: bugs[0].phase || 'Not Set',
-        phase_status: bugs[0].phase_status || 'Open',
-        active_stakeholders: ['productmanager', 'programmanager', 'developer', 'tester', 'architect']
-      } : undefined;
-
-      const appliedFilters: { [key: string]: any } = {};
-      if (status) appliedFilters.status = status;
-      if (severity) appliedFilters.severity = severity;
-      if (reported_by) appliedFilters.reported_by = reported_by;
-      if (assigned_to) appliedFilters.assigned_to = assigned_to;
-      if (phase) appliedFilters.phase = phase;
-      if (phase_status) appliedFilters.phase_status = phase_status;
-
       const output = {
         data: convertSQLiteBooleans(bugs),
         total_count: bugs.length,
-        filtered_count: bugs.length,
-        phase_context: phaseContext,
-        applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false }
+        filtered_count: bugs.length
       };
 
       return {
@@ -1932,79 +2215,41 @@ server.registerTool(
   'list_test_cases',
   {
     title: 'List Test Cases',
-    description: 'List test cases with optional filtering',
+    description: 'List test cases with optional filtering by status, assignee',
     inputSchema: {
       status: z.enum(['New', 'Passed', 'Failed']).optional(),
       assigned_to: z.enum(['tester', 'productmanager']).optional(),
-      phase: z.union([z.string(), z.array(z.string())]).optional(),
-      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional()
+      limit: z.number().default(50)
     },
     outputSchema: {
-      data: z.array(z.object({
-        id: z.number(),
-        user_story_id: z.number().nullable(),
-        title: z.string(),
-        description: z.string().nullable(),
-        status: z.string(),
-        assigned_to: z.string().nullable(),
-        phase: z.string().nullable(),
-        phase_status: z.string().nullable(),
-        created_at: z.string(),
-        updated_at: z.string()
-      })),
+      data: z.array(z.any()),
       total_count: z.number(),
-      filtered_count: z.number(),
-      phase_context: z.object({
-        current_phase: z.string(),
-        phase_status: z.string(),
-        active_stakeholders: z.array(z.string())
-      }).optional(),
-      applied_filters: z.record(z.any()),
-      pagination: z.object({
-        limit: z.number(),
-        offset: z.number(),
-        has_more: z.boolean()
-      }).optional()
+      filtered_count: z.number()
     }
   },
-  async ({ status, assigned_to, phase, phase_status, limit = 50 }) => {
+  async ({ status, assigned_to, limit = 50 }) => {
     try {
       const database = getDatabase();
-      let query = 'SELECT * FROM test_cases WHERE 1=1';
-      const params: any[] = [];
+
+      let query = `SELECT * FROM test_cases`;
+      const conditions = [];
+      const params = [];
 
       if (status) {
-        query += ' AND status = ?';
+        conditions.push('status = ?');
         params.push(status);
       }
 
       if (assigned_to) {
-        query += ' AND assigned_to = ?';
+        conditions.push('assigned_to = ?');
         params.push(assigned_to);
       }
 
-      if (phase) {
-        if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
-          params.push(...phase);
-        } else {
-          query += ' AND phase = ?';
-          params.push(phase);
-        }
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      if (phase_status) {
-        if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
-          params.push(...phase_status);
-        } else {
-          query += ' AND phase_status = ?';
-          params.push(phase_status);
-        }
-      }
-
-      query += ' ORDER BY created_at DESC LIMIT ?';
+      query += ` ORDER BY created_at DESC LIMIT ?`;
       params.push(limit);
 
       const stmt = database.prepare(query);
@@ -2017,26 +2262,10 @@ server.registerTool(
         `).get(testCase.id).count;
       }
 
-      // Calculate phase context
-      const phaseContext = test_cases.length > 0 ? {
-        current_phase: test_cases[0].phase || 'Not Set',
-        phase_status: test_cases[0].phase_status || 'New',
-        active_stakeholders: ['tester', 'productmanager']
-      } : undefined;
-
-      const appliedFilters: { [key: string]: any } = {};
-      if (status) appliedFilters.status = status;
-      if (assigned_to) appliedFilters.assigned_to = assigned_to;
-      if (phase) appliedFilters.phase = phase;
-      if (phase_status) appliedFilters.phase_status = phase_status;
-
       const output = {
         data: convertSQLiteBooleans(test_cases),
         total_count: test_cases.length,
-        filtered_count: test_cases.length,
-        phase_context: phaseContext,
-        applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false }
+        filtered_count: test_cases.length
       };
 
       return {
@@ -2056,130 +2285,114 @@ server.registerTool(
 server.registerTool(
   'update_entity_status',
   {
-    title: 'Update Entity Status and Assignment',
-    description: 'Update the status and/or assignment of any SDLC entity (epic, user_story, task, bug, test_case)',
+    title: 'Update Entity Status',
+    description: 'Update status and/or assignment of any SDLC entity with audit trail recording',
     inputSchema: {
       entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
       entity_id: z.number(),
-      status: z.string().optional(), // Will be validated by database CHECK constraints
-      assigned_to: z.string().optional(), // Will be validated by database CHECK constraints
+      status: z.string().optional(),
+      assigned_to: z.enum(['productmanager', 'programmanager', 'architect', 'developer', 'tester']).optional(),
       phase: z.string().optional(),
-      phase_status: z.string().optional(),
-      transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+      phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional()
     },
     outputSchema: {
       success: z.boolean(),
       entity_type: z.string(),
       entity_id: z.number(),
-      old_status: z.string().nullable(),
-      new_status: z.string().nullable(),
-      old_assigned_to: z.string().nullable(),
-      new_assigned_to: z.string().nullable(),
-      old_phase: z.string().nullable(),
-      new_phase: z.string().nullable(),
-      old_phase_status: z.string().nullable(),
-      new_phase_status: z.string().nullable()
+      old_status: z.string().optional(),
+      new_status: z.string().optional(),
+      old_assigned_to: z.string().nullable().optional(),
+      new_assigned_to: z.string().nullable().optional()
     }
   },
-  async ({ entity_type, entity_id, status, assigned_to, phase, phase_status, transitioned_by }) => {
+  async ({ entity_type, entity_id, status, assigned_to, phase, phase_status }) => {
     try {
-      const tableName = {
+      const database = getDatabase();
+
+      // Validate entity exists
+      const entityTable = {
         epic: 'epics',
         user_story: 'user_stories',
         task: 'tasks',
         bug: 'bugs',
         test_case: 'test_cases'
       }[entity_type];
-      // Get current status, assigned_to, phase, and phase_status
-      const database = getDatabase();
-      const currentStmt = database.prepare(`SELECT status, assigned_to, phase, phase_status FROM ${tableName} WHERE id = ?`);
-      const current = currentStmt.get(entity_id) as { status: string; assigned_to: string; phase: string; phase_status: string } | undefined;
 
-      if (!current) {
+      const currentEntity = database.prepare(`SELECT * FROM ${entityTable} WHERE id = ?`).get(entity_id);
+      if (!currentEntity) {
         return {
-          content: [{ type: 'text', text: `${entity_type} not found` }],
+          content: [{ type: 'text', text: `Entity not found` }],
           isError: true
         };
       }
 
-      // Build update query dynamically
-      const updates: string[] = [];
-      const params: any[] = [];
+      // Build update query
+      const updateFields = [];
+      const updateValues = [];
 
       if (status !== undefined) {
-        updates.push('status = ?');
-        params.push(status);
+        updateFields.push('status = ?');
+        updateValues.push(status);
       }
 
       if (assigned_to !== undefined) {
-        updates.push('assigned_to = ?');
-        params.push(assigned_to);
+        updateFields.push('assigned_to = ?');
+        updateValues.push(assigned_to);
       }
 
       if (phase !== undefined) {
-        updates.push('phase = ?');
-        params.push(phase);
+        updateFields.push('phase = ?');
+        updateValues.push(phase);
       }
 
       if (phase_status !== undefined) {
-        updates.push('phase_status = ?');
-        params.push(phase_status);
+        updateFields.push('phase_status = ?');
+        updateValues.push(phase_status);
       }
 
-      if (updates.length === 0) {
+      if (updateFields.length === 0) {
         return {
-          content: [{ type: 'text', text: `No updates specified for ${entity_type}` }],
+          content: [{ type: 'text', text: 'No fields to update' }],
           isError: true
         };
       }
 
-      updates.push('updated_at = CURRENT_TIMESTAMP');
+      updateFields.push('updated_at = CURRENT_TIMESTAMP');
 
       const updateStmt = database.prepare(`
-        UPDATE ${tableName}
-        SET ${updates.join(', ')}
+        UPDATE ${entityTable}
+        SET ${updateFields.join(', ')}
         WHERE id = ?
       `);
-      params.push(entity_id);
+      updateValues.push(entity_id);
+      updateStmt.run(...updateValues);
 
-      const result = updateStmt.run(...params);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: `Failed to update ${entity_type}` }],
-          isError: true
-        };
+      // Record status transition if status changed
+      if (status && currentEntity.status !== status) {
+        database.prepare(`
+          INSERT INTO status_transitions
+          (entity_type, entity_id, from_status, to_status, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(entity_type, entity_id, currentEntity.status, status, 'productmanager');
       }
 
-      // Record transitions
-      if (status !== undefined && status !== current.status) {
-        const transitionStmt = database.prepare(`
-          INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+      // Record ownership transition if assigned_to changed
+      if (assigned_to !== undefined && currentEntity.assigned_to !== assigned_to) {
+        database.prepare(`
+          INSERT INTO ownership_transitions
+          (entity_type, entity_id, from_owner, to_owner, transitioned_by)
           VALUES (?, ?, ?, ?, ?)
-        `);
-        transitionStmt.run(entity_type, entity_id, current.status, status, transitioned_by);
-      }
-
-      if (assigned_to !== undefined && assigned_to !== current.assigned_to) {
-        const ownershipStmt = database.prepare(`
-          INSERT INTO ownership_transitions (entity_type, entity_id, from_owner, to_owner, transitioned_by)
-          VALUES (?, ?, ?, ?, ?)
-        `);
-        ownershipStmt.run(entity_type, entity_id, current.assigned_to, assigned_to, transitioned_by);
+        `).run(entity_type, entity_id, currentEntity.assigned_to, assigned_to, 'productmanager');
       }
 
       const output = {
         success: true,
         entity_type,
         entity_id,
-        old_status: status !== undefined ? current.status : null,
-        new_status: status !== undefined ? status : null,
-        old_assigned_to: assigned_to !== undefined ? current.assigned_to : null,
-        new_assigned_to: assigned_to !== undefined ? assigned_to : null,
-        old_phase: phase !== undefined ? current.phase : null,
-        new_phase: phase !== undefined ? phase : null,
-        old_phase_status: phase_status !== undefined ? current.phase_status : null,
-        new_phase_status: phase_status !== undefined ? phase_status : null
+        old_status: currentEntity.status,
+        new_status: status || currentEntity.status,
+        old_assigned_to: currentEntity.assigned_to,
+        new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to
       };
 
       return {
@@ -2188,819 +2401,14 @@ server.registerTool(
       };
     } catch (error) {
       return {
-        content: [{ type: 'text', text: `Error updating ${entity_type}: ${error.message}` }],
+        content: [{ type: 'text', text: `Error updating entity: ${error.message}` }],
         isError: true
       };
     }
   }
 );
 
-// Tool: List tasks
-server.registerTool(
-  'list_tasks',
-  {
-    title: 'List Tasks',
-    description: 'List tasks with optional filtering',
-    inputSchema: {
-      status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
-      priority: z.enum(['low', 'medium', 'high']).optional(),
-      phase: z.union([z.string(), z.array(z.string())]).optional(),
-      phase_status: z.union([z.string(), z.array(z.string())]).optional(),
-      limit: z.number().min(1).max(100).optional()
-    },
-    outputSchema: {
-      data: z.array(z.any()),
-      total_count: z.number(),
-      filtered_count: z.number(),
-      phase_context: z.object({
-        current_phase: z.string(),
-        phase_status: z.string(),
-        active_stakeholders: z.array(z.string())
-      }).optional(),
-      applied_filters: z.record(z.any()),
-      pagination: z.object({
-        limit: z.number(),
-        offset: z.number(),
-        has_more: z.boolean()
-      }).optional()
-    }
-  },
-   async ({ status, priority, phase, phase_status, limit = 50 }) => {
-    try {
-      const database = getDatabase();
-      let query = 'SELECT * FROM tasks WHERE 1=1';
-      const params: any[] = [];
-
-      if (status) {
-        query += ' AND status = ?';
-        params.push(status);
-      }
-
-      if (priority) {
-        query += ' AND priority = ?';
-        params.push(priority);
-      }
-
-      if (phase) {
-        if (Array.isArray(phase)) {
-          query += ` AND phase IN (${phase.map(() => '?').join(',')})`;
-          params.push(...phase);
-        } else {
-          query += ' AND phase = ?';
-          params.push(phase);
-        }
-      }
-
-      if (phase_status) {
-        if (Array.isArray(phase_status)) {
-          query += ` AND phase_status IN (${phase_status.map(() => '?').join(',')})`;
-          params.push(...phase_status);
-        } else {
-          query += ' AND phase_status = ?';
-          params.push(phase_status);
-        }
-      }
-
-      query += ' ORDER BY created_at DESC LIMIT ?';
-      params.push(limit);
-
-      const stmt = database.prepare(query);
-      const tasks = stmt.all(...params);
-
-      // Add comment count to each task
-      for (const task of tasks) {
-        task.comment_count = database.prepare(`
-          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
-        `).get(task.id).count;
-      }
-
-      // Calculate phase context
-      const phaseContext = tasks.length > 0 ? {
-        current_phase: tasks[0].phase || 'Not Set',
-        phase_status: tasks[0].phase_status || 'New',
-        active_stakeholders: ['architect', 'developer']
-      } : undefined;
-
-      const appliedFilters: { [key: string]: any } = {};
-      if (status) appliedFilters.status = status;
-      if (priority) appliedFilters.priority = priority;
-      if (phase) appliedFilters.phase = phase;
-      if (phase_status) appliedFilters.phase_status = phase_status;
-
-      const output = {
-        data: convertSQLiteBooleans(tasks),
-        total_count: tasks.length,
-        filtered_count: tasks.length,
-        phase_context: phaseContext,
-        applied_filters: appliedFilters,
-        pagination: { limit, offset: 0, has_more: false }
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Manage story dependencies
-server.registerTool(
-  'manage_story_dependencies',
-  {
-    title: 'Manage Story Dependencies',
-    description: 'Add or remove dependencies for multiple user stories in bulk',
-    inputSchema: {
-      operations: z.array(z.object({
-        story_id: z.number(),
-        action: z.enum(['add', 'remove']),
-        dependency_story_ids: z.array(z.number()).min(1)
-      })).min(1)
-    },
-    outputSchema: {
-      results: z.array(z.object({
-        story_id: z.number(),
-        success: z.boolean(),
-        action: z.string(),
-        added_dependencies: z.array(z.number()).optional(),
-        removed_dependencies: z.array(z.number()).optional(),
-        errors: z.array(z.string()).optional()
-      }))
-    }
-  },
-  async ({ operations }) => {
-    try {
-      const database = getDatabase();
-      const results: any[] = [];
-
-      // Process operations in a transaction
-      const transaction = database.transaction(() => {
-        operations.forEach(operation => {
-          const { story_id, action, dependency_story_ids } = operation;
-          const result = {
-            story_id,
-            success: true,
-            action,
-            added_dependencies: [] as number[],
-            removed_dependencies: [] as number[],
-            errors: [] as string[]
-          };
-
-          try {
-            // Validate story exists
-            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(story_id);
-            if (!story) {
-              result.success = false;
-              result.errors.push(`Story ${story_id} not found`);
-              results.push(result);
-              return;
-            }
-
-            dependency_story_ids.forEach(depStoryId => {
-              // Validate dependency story exists
-              const depStory = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(depStoryId);
-              if (!depStory) {
-                result.errors.push(`Dependency story ${depStoryId} not found`);
-                return;
-              }
-
-              // Prevent self-dependency
-              if (story_id === depStoryId) {
-                result.errors.push(`Cannot create self-dependency for story ${story_id}`);
-                return;
-              }
-
-              // Check for circular dependencies
-              if (wouldCreateCircularDependency(database, story_id, depStoryId)) {
-                result.errors.push(`Circular dependency detected with story ${depStoryId}`);
-                return;
-              }
-
-              if (action === 'add') {
-                // Insert dependency (ignore if already exists)
-                database.prepare(`
-                  INSERT OR IGNORE INTO story_dependencies
-                  (dependent_story_id, dependency_story_id, created_by)
-                  VALUES (?, ?, ?)
-                `).run(story_id, depStoryId, 'productmanager');
-
-                result.added_dependencies.push(depStoryId);
-
-              } else if (action === 'remove') {
-                // Remove dependency
-                const deleteResult = database.prepare(`
-                  DELETE FROM story_dependencies
-                  WHERE dependent_story_id = ? AND dependency_story_id = ?
-                `).run(story_id, depStoryId);
-
-                if (deleteResult.changes > 0) {
-                  result.removed_dependencies.push(depStoryId);
-                } else {
-                  result.errors.push(`Dependency on story ${depStoryId} not found`);
-                }
-              }
-            });
-
-            if (result.errors.length > 0) {
-              result.success = false;
-            }
-
-          } catch (error) {
-            result.success = false;
-            result.errors.push(error.message);
-          }
-
-          results.push(result);
-        });
-      });
-
-      transaction();
-
-      return {
-        content: [{ type: 'text', text: `Processed ${operations.length} dependency operations` }],
-        structuredContent: { results }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to manage story dependencies: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Circular dependency detection function
-function wouldCreateCircularDependency(database: any, storyId: number, dependencyId: number): boolean {
-  const visited = new Set<number>();
-  const stack = [dependencyId];
-
-  while (stack.length > 0) {
-    const currentId = stack.pop()!;
-    if (visited.has(currentId)) continue;
-    if (currentId === storyId) return true; // Circular dependency found
-
-    visited.add(currentId);
-
-    // Find all stories that currentId depends on
-    const dependencies = database.prepare(`
-      SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
-    `).all(currentId);
-
-    stack.push(...dependencies.map((d: any) => d.dependency_story_id));
-  }
-
-  return false;
-}
-
-// Helper function to check for circular epic dependencies
-function wouldCreateCircularEpicDependency(database: any, epicId: number, dependencyId: number): boolean {
-  const visited = new Set<number>();
-  const stack = [dependencyId];
-
-  while (stack.length > 0) {
-    const currentId = stack.pop()!;
-    if (visited.has(currentId)) continue;
-    if (currentId === epicId) return true; // Circular dependency found
-
-    visited.add(currentId);
-
-    // Find all epics that currentId depends on
-    const dependencies = database.prepare(`
-      SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
-    `).all(currentId);
-
-    stack.push(...dependencies.map((d: any) => d.dependency_epic_id));
-  }
-
-  return false;
-}
-
-// Tool: Update epic
-server.registerTool(
-  'update_epic',
-  {
-    title: 'Update Epic',
-    description: 'Update epic title, description, status, assignment, and phases',
-    inputSchema: {
-      epic_id: z.number(),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      status: z.enum(['New', 'Open', 'Closed']).optional(),
-      assigned_to: z.string().optional(),
-      phase: z.string().optional(),
-      phase_status: z.string().optional(),
-      updated_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
-    },
-    outputSchema: {
-      success: z.boolean(),
-      epic_id: z.number(),
-      changes: z.array(z.object({
-        field: z.string(),
-        old_value: z.any(),
-        new_value: z.any()
-      }))
-    }
-  },
-  async ({ epic_id, title, description, status, assigned_to, phase, phase_status, updated_by }) => {
-    try {
-      const database = getDatabase();
-
-      // Get current epic
-      const currentEpic = database.prepare('SELECT * FROM epics WHERE id = ?').get(epic_id);
-      if (!currentEpic) {
-        return {
-          content: [{ type: 'text', text: `Epic ${epic_id} not found` }],
-          isError: true
-        };
-      }
-
-      // Check if epic is archived
-      if (currentEpic.archived) {
-        return {
-          content: [{ type: 'text', text: `Cannot update archived epic ${epic_id}` }],
-          isError: true
-        };
-      }
-
-      // Build update query
-      const updates: string[] = [];
-      const params: any[] = [];
-      const changes: any[] = [];
-
-      if (title !== undefined && title !== currentEpic.title) {
-        updates.push('title = ?');
-        params.push(title);
-        changes.push({
-          field: 'title',
-          old_value: currentEpic.title,
-          new_value: title
-        });
-      }
-
-      if (description !== undefined && description !== currentEpic.description) {
-        updates.push('description = ?');
-        params.push(description);
-        changes.push({
-          field: 'description',
-          old_value: currentEpic.description,
-          new_value: description
-        });
-      }
-
-      if (status !== undefined && status !== currentEpic.status) {
-        updates.push('status = ?');
-        params.push(status);
-        changes.push({
-          field: 'status',
-          old_value: currentEpic.status,
-          new_value: status
-        });
-      }
-
-      if (assigned_to !== undefined && assigned_to !== currentEpic.assigned_to) {
-        updates.push('assigned_to = ?');
-        params.push(assigned_to);
-        changes.push({
-          field: 'assigned_to',
-          old_value: currentEpic.assigned_to,
-          new_value: assigned_to
-        });
-      }
-
-      if (phase !== undefined && phase !== currentEpic.phase) {
-        updates.push('phase = ?');
-        params.push(phase);
-        changes.push({
-          field: 'phase',
-          old_value: currentEpic.phase,
-          new_value: phase
-        });
-      }
-
-      if (phase_status !== undefined && phase_status !== currentEpic.phase_status) {
-        updates.push('phase_status = ?');
-        params.push(phase_status);
-        changes.push({
-          field: 'phase_status',
-          old_value: currentEpic.phase_status,
-          new_value: phase_status
-        });
-      }
-
-      if (updates.length === 0) {
-        return {
-          content: [{ type: 'text', text: 'No changes specified' }],
-          isError: true
-        };
-      }
-
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(epic_id);
-
-      // Execute update
-      const updateQuery = `UPDATE epics SET ${updates.join(', ')} WHERE id = ?`;
-      const result = database.prepare(updateQuery).run(...params);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Failed to update epic' }],
-          isError: true
-        };
-      }
-
-      return {
-        content: [{ type: 'text', text: `Updated epic ${epic_id} with ${changes.length} changes` }],
-        structuredContent: {
-          success: true,
-          epic_id,
-          changes
-        }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to update epic: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Update user story content
-server.registerTool(
-  'update_user_story_content',
-  {
-    title: 'Update User Story Content',
-    description: 'Update user story title, description, and story points (acceptance criteria requires separate tool)',
-    inputSchema: {
-      story_id: z.number(),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      story_points: z.number().optional(),
-      updated_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
-    },
-    outputSchema: {
-      success: z.boolean(),
-      story_id: z.number(),
-      changes: z.array(z.object({
-        field: z.string(),
-        old_value: z.any(),
-        new_value: z.any()
-      }))
-    }
-  },
-  async ({ story_id, title, description, story_points, updated_by }) => {
-    try {
-      const database = getDatabase();
-
-      // Get current story
-      const currentStory = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(story_id);
-      if (!currentStory) {
-        return {
-          content: [{ type: 'text', text: `User story ${story_id} not found` }],
-          isError: true
-        };
-      }
-
-      // Check if story is archived
-      if (currentStory.archived) {
-        return {
-          content: [{ type: 'text', text: `Cannot update archived user story ${story_id}` }],
-          isError: true
-        };
-      }
-
-      // Build update query
-      const updates: string[] = [];
-      const params: any[] = [];
-      const changes: any[] = [];
-
-      if (title !== undefined && title !== currentStory.title) {
-        updates.push('title = ?');
-        params.push(title);
-        changes.push({
-          field: 'title',
-          old_value: currentStory.title,
-          new_value: title
-        });
-      }
-
-      if (description !== undefined && description !== currentStory.description) {
-        updates.push('description = ?');
-        params.push(description);
-        changes.push({
-          field: 'description',
-          old_value: currentStory.description,
-          new_value: description
-        });
-      }
-
-      if (story_points !== undefined && story_points !== currentStory.story_points) {
-        updates.push('story_points = ?');
-        params.push(story_points);
-        changes.push({
-          field: 'story_points',
-          old_value: currentStory.story_points,
-          new_value: story_points
-        });
-      }
-
-      if (updates.length === 0) {
-        return {
-          content: [{ type: 'text', text: 'No changes specified' }],
-          isError: true
-        };
-      }
-
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(story_id);
-
-      // Execute update
-      const updateQuery = `UPDATE user_stories SET ${updates.join(', ')} WHERE id = ?`;
-      const result = database.prepare(updateQuery).run(...params);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Failed to update user story' }],
-          isError: true
-        };
-      }
-
-      // Log changes to audit table
-      changes.forEach(change => {
-        database.prepare(`
-          INSERT INTO user_story_content_changes (story_id, field_name, old_value, new_value, changed_by)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(story_id, change.field, change.old_value, change.new_value, updated_by);
-      });
-
-      return {
-        content: [{ type: 'text', text: `Updated user story ${story_id} with ${changes.length} changes` }],
-        structuredContent: {
-          success: true,
-          story_id,
-          changes
-        }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to update user story content: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Update user story acceptance criteria
-server.registerTool(
-  'update_user_story_acceptance_criteria',
-  {
-    title: 'Update User Story Acceptance Criteria',
-    description: 'Update user story acceptance criteria (restricted to product managers only)',
-    inputSchema: {
-      story_id: z.number(),
-      acceptance_criteria: z.string(),
-      updated_by: z.literal('productmanager')
-    },
-    outputSchema: {
-      success: z.boolean(),
-      story_id: z.number(),
-      old_acceptance_criteria: z.string().nullable(),
-      new_acceptance_criteria: z.string()
-    }
-  },
-  async ({ story_id, acceptance_criteria, updated_by }) => {
-    try {
-      // Validate user is product manager
-      if (updated_by !== 'productmanager') {
-        return {
-          content: [{ type: 'text', text: 'Only product managers can update acceptance criteria' }],
-          isError: true
-        };
-      }
-
-      const database = getDatabase();
-
-      // Get current story
-      const currentStory = database.prepare('SELECT acceptance_criteria, archived FROM user_stories WHERE id = ?').get(story_id);
-      if (!currentStory) {
-        return {
-          content: [{ type: 'text', text: `User story ${story_id} not found` }],
-          isError: true
-        };
-      }
-
-      // Check if story is archived
-      if (currentStory.archived) {
-        return {
-          content: [{ type: 'text', text: `Cannot update archived user story ${story_id}` }],
-          isError: true
-        };
-      }
-
-      // Update acceptance criteria
-      const result = database.prepare(`
-        UPDATE user_stories
-        SET acceptance_criteria = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(acceptance_criteria, story_id);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Failed to update acceptance criteria' }],
-          isError: true
-        };
-      }
-
-      // Log change to audit table
-      database.prepare(`
-        INSERT INTO user_story_acceptance_changes (story_id, old_acceptance_criteria, new_acceptance_criteria, changed_by)
-        VALUES (?, ?, ?, ?)
-      `).run(story_id, currentStory.acceptance_criteria, acceptance_criteria, updated_by);
-
-      return {
-        content: [{ type: 'text', text: `Updated acceptance criteria for user story ${story_id}` }],
-        structuredContent: {
-          success: true,
-          story_id,
-          old_acceptance_criteria: currentStory.acceptance_criteria,
-          new_acceptance_criteria: acceptance_criteria
-        }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to update acceptance criteria: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Archive user story
-server.registerTool(
-  'archive_user_story',
-  {
-    title: 'Archive User Story',
-    description: 'Archive a user story (restricted to product managers only)',
-    inputSchema: {
-      story_id: z.number(),
-      reason: z.string(),
-      archived_by: z.literal('productmanager')
-    },
-    outputSchema: {
-      success: z.boolean(),
-      story_id: z.number(),
-      archived_at: z.string(),
-      archive_reason: z.string()
-    }
-  },
-  async ({ story_id, reason, archived_by }) => {
-    try {
-      // Validate user is product manager
-      if (archived_by !== 'productmanager') {
-        return {
-          content: [{ type: 'text', text: 'Only product managers can archive user stories' }],
-          isError: true
-        };
-      }
-
-      const database = getDatabase();
-
-      // Get current story
-      const currentStory = database.prepare('SELECT archived FROM user_stories WHERE id = ?').get(story_id);
-      if (!currentStory) {
-        return {
-          content: [{ type: 'text', text: `User story ${story_id} not found` }],
-          isError: true
-        };
-      }
-
-      // Check if already archived
-      if (currentStory.archived) {
-        return {
-          content: [{ type: 'text', text: `User story ${story_id} is already archived` }],
-          isError: true
-        };
-      }
-
-      // Archive the story
-      const archivedAt = new Date().toISOString();
-      const result = database.prepare(`
-        UPDATE user_stories
-        SET archived = TRUE, archived_at = ?, archived_by = ?, archive_reason = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(archivedAt, archived_by, reason, story_id);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Failed to archive user story' }],
-          isError: true
-        };
-      }
-
-      return {
-        content: [{ type: 'text', text: `Archived user story ${story_id}` }],
-        structuredContent: {
-          success: true,
-          story_id,
-          archived_at: archivedAt,
-          archive_reason: reason
-        }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to archive user story: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Archive epic
-server.registerTool(
-  'archive_epic',
-  {
-    title: 'Archive Epic',
-    description: 'Archive an epic (restricted to product managers only)',
-    inputSchema: {
-      epic_id: z.number(),
-      reason: z.string(),
-      archived_by: z.literal('productmanager')
-    },
-    outputSchema: {
-      success: z.boolean(),
-      epic_id: z.number(),
-      archived_at: z.string(),
-      archive_reason: z.string()
-    }
-  },
-  async ({ epic_id, reason, archived_by }) => {
-    try {
-      // Validate user is product manager
-      if (archived_by !== 'productmanager') {
-        return {
-          content: [{ type: 'text', text: 'Only product managers can archive epics' }],
-          isError: true
-        };
-      }
-
-      const database = getDatabase();
-
-      // Get current epic
-      const currentEpic = database.prepare('SELECT archived FROM epics WHERE id = ?').get(epic_id);
-      if (!currentEpic) {
-        return {
-          content: [{ type: 'text', text: `Epic ${epic_id} not found` }],
-          isError: true
-        };
-      }
-
-      // Check if already archived
-      if (currentEpic.archived) {
-        return {
-          content: [{ type: 'text', text: `Epic ${epic_id} is already archived` }],
-          isError: true
-        };
-      }
-
-      // Archive the epic
-      const archivedAt = new Date().toISOString();
-      const result = database.prepare(`
-        UPDATE epics
-        SET archived = TRUE, archived_at = ?, archived_by = ?, archive_reason = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(archivedAt, archived_by, reason, epic_id);
-
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Failed to archive epic' }],
-          isError: true
-        };
-      }
-
-      return {
-        content: [{ type: 'text', text: `Archived epic ${epic_id}` }],
-        structuredContent: {
-          success: true,
-          epic_id,
-          archived_at: archivedAt,
-          archive_reason: reason
-        }
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Failed to archive epic: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
-
-// Tool: Update task status
+// Tool: Update Task Status
 server.registerTool(
   'update_task_status',
   {
@@ -3050,11 +2458,135 @@ server.registerTool(
   }
 );
 
+// Tool: Manage Story Dependencies
+server.registerTool(
+  'manage_story_dependencies',
+  {
+    title: 'Manage Story Dependencies',
+    description: 'Add or remove dependencies for multiple user stories in bulk',
+    inputSchema: {
+      operations: z.array(z.object({
+        story_id: z.number(),
+        action: z.enum(['add', 'remove']),
+        dependency_story_ids: z.array(z.number()).min(1)
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        story_id: z.number(),
+        success: z.boolean(),
+        action: z.string(),
+        added_dependencies: z.array(z.number()).optional(),
+        removed_dependencies: z.array(z.number()).optional(),
+        errors: z.array(z.string()).optional()
+      }))
+    }
+  },
+  async ({ operations }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
 
+      // Process operations in a transaction
+      const transaction = database.transaction(() => {
+        operations.forEach(operation => {
+          const { story_id, action, dependency_story_ids } = operation;
+          const result = {
+            story_id,
+            success: true,
+            action,
+            added_dependencies: [],
+            removed_dependencies: [],
+            errors: []
+          };
 
+          try {
+            // Validate story exists
+            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(story_id);
+            if (!story) {
+              result.success = false;
+              result.errors.push(`Story ${story_id} not found`);
+              results.push(result);
+              return;
+            }
 
+            dependency_story_ids.forEach(depStoryId => {
+              // Validate dependency story exists
+              const depStory = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(depStoryId);
+              if (!depStory) {
+                result.errors.push(`Dependency story ${depStoryId} not found`);
+                return;
+              }
 
+              // Prevent self-dependency
+              if (story_id === depStoryId) {
+                result.errors.push(`Cannot create self-dependency for story ${story_id}`);
+                return;
+              }
 
+              // Check for circular dependencies
+              if (wouldCreateCircularDependency(database, story_id, depStoryId)) {
+                result.errors.push(`Circular dependency detected with story ${depStoryId}`);
+                return;
+              }
+
+              if (action === 'add') {
+                // Add dependency (ignore if already exists)
+                database.prepare(`
+                  INSERT OR IGNORE INTO story_dependencies
+                  (dependent_story_id, dependency_story_id, created_by)
+                  VALUES (?, ?, ?)
+                `).run(story_id, depStoryId, 'productmanager');
+
+                result.added_dependencies.push(depStoryId);
+
+              } else if (action === 'remove') {
+                // Remove dependency
+                const deleteResult = database.prepare(`
+                  DELETE FROM story_dependencies
+                  WHERE dependent_story_id = ? AND dependency_story_id = ?
+                `).run(story_id, depStoryId);
+
+                if (deleteResult.changes > 0) {
+                  result.removed_dependencies.push(depStoryId);
+                } else {
+                  result.errors.push(`Dependency on story ${depStoryId} not found`);
+                }
+              }
+            });
+
+            if (result.errors.length > 0) {
+              result.success = false;
+            }
+
+          } catch (error) {
+            result.success = false;
+            result.errors.push(error.message);
+          }
+
+          results.push(result);
+        });
+      });
+
+      transaction();
+
+      return {
+        content: [{ type: 'text', text: `Processed ${operations.length} story dependency operations` }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to manage story dependencies: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register all wiki tools
+registerAllWikiTools(server);
+
+// Connect to stdio transport and start HTTP server
 
 // Connect to stdio transport and start HTTP server
 async function main() {
