@@ -63,6 +63,45 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     let epicsData = [];
+    let currentRoute = '/';
+
+    // Client-side routing
+    const routes = {
+      '/': showDashboard,
+      '/epic/:id': showEpicDetails,
+      '/story/:id': showStoryDetails,
+      '/task/:id': showTaskDetails,
+      '/bug/:id': showBugDetails,
+      '/test-case/:id': showTestCaseDetails
+    };
+
+    function navigateTo(path) {
+      window.history.pushState(null, '', path);
+      currentRoute = path;
+      renderRoute(path);
+    }
+
+    function renderRoute(path) {
+      const route = Object.keys(routes).find(route => {
+        const routeRegex = new RegExp('^' + route.replace(/:\w+/g, '(\\w+)') + '$');
+        return routeRegex.test(path);
+      });
+
+      if (route) {
+        const routeHandler = routes[route];
+        const matches = path.match(new RegExp(route.replace(/:\w+/g, '(\\w+)')));
+        const params = matches ? matches.slice(1) : [];
+        routeHandler.apply(null, params);
+      } else {
+        showDashboard();
+      }
+    }
+
+    // Handle browser back/forward
+    window.addEventListener('popstate', () => {
+      const path = window.location.pathname;
+      renderRoute(path);
+    });
 
     function formatDate(dateString) {
       const date = new Date(dateString);
@@ -131,12 +170,12 @@
 
       // Expand/collapse button
       const expandButton = hasChildren ?
-        `<button class="btn btn-sm btn-outline-secondary me-2 expand-btn" data-bs-toggle="collapse" data-bs-target="#collapse_${entityId}" aria-expanded="true">
+        `<button class="btn btn-sm btn-outline-secondary me-2 expand-btn" data-bs-toggle="collapse" data-bs-target="#collapse_${entityId}" aria-expanded="true" onclick="event.stopPropagation()">
           <i class="bi bi-dash"></i>
         </button>` : '';
 
       return `
-        <div class="card entity-card mb-2 hierarchy-level-${level}">
+        <div class="card entity-card mb-2 hierarchy-level-${level}" onclick="navigateTo('/${type.replace('_', '-')}/${entity.id}')" style="cursor: pointer;">
           <div class="card-body py-2">
             <div class="d-flex justify-content-between align-items-center">
               <div class="d-flex align-items-center flex-grow-1">
@@ -238,6 +277,440 @@
       });
     }
 
+    // Route handlers
+    function showDashboard() {
+      document.title = 'SDLC Tracker Dashboard';
+      renderSDLC();
+    }
+
+    async function showEpicDetails(epicId) {
+      try {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading epic details...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/epic/${epicId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load epic details');
+        }
+
+        const epic = await response.json();
+        renderEntityDetail(epic, 'epic');
+      } catch (error) {
+        console.error('Error loading epic details:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load epic details</h5>
+            <p>Please try again or go back to the dashboard.</p>
+            <button class="btn btn-primary" onclick="navigateTo('/')">Back to Dashboard</button>
+          </div>
+        `;
+      }
+    }
+
+    async function showStoryDetails(storyId) {
+      try {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading user story details...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/story/${storyId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load story details');
+        }
+
+        const story = await response.json();
+        renderEntityDetail(story, 'user_story');
+      } catch (error) {
+        console.error('Error loading story details:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load user story details</h5>
+            <p>Please try again or go back to the dashboard.</p>
+            <button class="btn btn-primary" onclick="navigateTo('/')">Back to Dashboard</button>
+          </div>
+        `;
+      }
+    }
+
+    async function showTaskDetails(taskId) {
+      try {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading task details...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/task/${taskId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load task details');
+        }
+
+        const task = await response.json();
+        renderEntityDetail(task, 'task');
+      } catch (error) {
+        console.error('Error loading task details:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load task details</h5>
+            <p>Please try again or go back to the dashboard.</p>
+            <button class="btn btn-primary" onclick="navigateTo('/')">Back to Dashboard</button>
+          </div>
+        `;
+      }
+    }
+
+    async function showBugDetails(bugId) {
+      try {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading bug details...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/bug/${bugId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load bug details');
+        }
+
+        const bug = await response.json();
+        renderEntityDetail(bug, 'bug');
+      } catch (error) {
+        console.error('Error loading bug details:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load bug details</h5>
+            <p>Please try again or go back to the dashboard.</p>
+            <button class="btn btn-primary" onclick="navigateTo('/')">Back to Dashboard</button>
+          </div>
+        `;
+      }
+    }
+
+    async function showTestCaseDetails(testCaseId) {
+      try {
+        document.getElementById('content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading test case details...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/test-case/${testCaseId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load test case details');
+        }
+
+        const testCase = await response.json();
+        renderEntityDetail(testCase, 'test_case');
+      } catch (error) {
+        console.error('Error loading test case details:', error);
+        document.getElementById('content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load test case details</h5>
+            <p>Please try again or go back to the dashboard.</p>
+            <button class="btn btn-primary" onclick="navigateTo('/')">Back to Dashboard</button>
+          </div>
+        `;
+      }
+    }
+
+    function renderEntityDetail(entity, entityType) {
+      const statusBadge = getStatusBadge(entity.status);
+      const entityIcon = getEntityIcon(entityType);
+      const title = entity.title || entity.description || `ID: ${entity.id}`;
+
+      document.title = `${title} - SDLC Tracker`;
+
+      let attributesHtml = '';
+      let relationshipsHtml = '';
+
+      // Entity-specific attributes
+      switch (entityType) {
+        case 'epic':
+          attributesHtml = `
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Owner:</strong> ${entity.owner || 'Not assigned'}
+              </div>
+              <div class="col-md-6">
+                <strong>Assigned To:</strong> ${entity.assigned_to || 'Not assigned'}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>User Stories:</strong> ${entity.user_story_count || 0}
+              </div>
+              ${entity.archived ? `
+                <div class="col-md-6">
+                  <strong>Archived:</strong>
+                  <span class="badge bg-warning">Yes</span>
+                  ${entity.archive_reason ? `<br><small class="text-muted">Reason: ${entity.archive_reason}</small>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          `;
+          break;
+
+        case 'user_story':
+          attributesHtml = `
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Story Points:</strong> ${entity.story_points || 'Not set'}
+              </div>
+              <div class="col-md-6">
+                <strong>Current Owner:</strong> ${entity.current_owner || 'Not assigned'}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Assigned To:</strong> ${entity.assigned_to || 'Not assigned'}
+              </div>
+              <div class="col-md-6">
+                <strong>Epic:</strong> ${entity.epic_id ? `<a href="#" onclick="navigateTo('/epic/${entity.epic_id}')">Epic #${entity.epic_id}</a>` : 'None'}
+              </div>
+            </div>
+            ${entity.acceptance_criteria ? `
+              <div class="mb-3">
+                <strong>Acceptance Criteria:</strong>
+                <div class="mt-2 p-3 bg-light rounded">${entity.acceptance_criteria}</div>
+              </div>
+            ` : ''}
+            ${entity.dependencies && entity.dependencies.length > 0 ? `
+              <div class="mb-3">
+                <strong>Dependencies:</strong>
+                <div class="mt-2">
+                  ${entity.dependencies.map(depId => `<a href="#" onclick="navigateTo('/story/${depId}')" class="badge bg-info me-1">Story #${depId}</a>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+            ${entity.dependent_stories && entity.dependent_stories.length > 0 ? `
+              <div class="mb-3">
+                <strong>Depended By:</strong>
+                <div class="mt-2">
+                  ${entity.dependent_stories.map(depId => `<a href="#" onclick="navigateTo('/story/${depId}')" class="badge bg-secondary me-1">Story #${depId}</a>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <strong>Tasks:</strong> ${entity.task_count || 0}
+              </div>
+              <div class="col-md-4">
+                <strong>Bugs:</strong> ${entity.bug_count || 0}
+              </div>
+              <div class="col-md-4">
+                <strong>Test Cases:</strong> ${entity.test_case_count || 0}
+              </div>
+            </div>
+            ${entity.archived ? `
+              <div class="mb-3">
+                <strong>Archived:</strong>
+                <span class="badge bg-warning ms-2">Yes</span>
+                ${entity.archive_reason ? `<br><small class="text-muted">Reason: ${entity.archive_reason}</small>` : ''}
+              </div>
+            ` : ''}
+          `;
+          break;
+
+        case 'task':
+          attributesHtml = `
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Assigned To:</strong> ${entity.assigned_to || 'Not assigned'}
+              </div>
+              <div class="col-md-6">
+                <strong>Estimated Hours:</strong> ${entity.estimated_hours || 'Not set'}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Actual Hours:</strong> ${entity.actual_hours || 'Not set'}
+              </div>
+              <div class="col-md-6">
+                <strong>User Story:</strong> ${entity.user_story_id ? `<a href="#" onclick="navigateTo('/story/${entity.user_story_id}')">Story #${entity.user_story_id}</a>` : 'None'}
+              </div>
+            </div>
+          `;
+          break;
+
+        case 'bug':
+          attributesHtml = `
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Severity:</strong>
+                <span class="badge bg-${getStatusBadge(entity.severity)}">${entity.severity}</span>
+              </div>
+              <div class="col-md-6">
+                <strong>Reported By:</strong> ${entity.reported_by || 'Unknown'}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Assigned To:</strong> ${entity.assigned_to || 'Not assigned'}
+              </div>
+              <div class="col-md-6">
+                <strong>Created By:</strong> ${entity.created_by || 'Unknown'}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>User Story:</strong> ${entity.user_story_id ? `<a href="#" onclick="navigateTo('/story/${entity.user_story_id}')">Story #${entity.user_story_id}</a>` : 'None'}
+              </div>
+              <div class="col-md-6">
+                <strong>Task:</strong> ${entity.task_id ? `<a href="#" onclick="navigateTo('/task/${entity.task_id}')">Task #${entity.task_id}</a>` : 'None'}
+              </div>
+            </div>
+          `;
+          break;
+
+        case 'test_case':
+          attributesHtml = `
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>Assigned To:</strong> ${entity.assigned_to || 'Not assigned'}
+              </div>
+              <div class="col-md-6">
+                <strong>User Story:</strong> ${entity.user_story_id ? `<a href="#" onclick="navigateTo('/story/${entity.user_story_id}')">Story #${entity.user_story_id}</a>` : 'None'}
+              </div>
+            </div>
+            ${entity.preconditions ? `
+              <div class="mb-3">
+                <strong>Preconditions:</strong>
+                <div class="mt-2 p-3 bg-light rounded">${entity.preconditions}</div>
+              </div>
+            ` : ''}
+            ${entity.steps ? `
+              <div class="mb-3">
+                <strong>Steps:</strong>
+                <div class="mt-2 p-3 bg-light rounded">${entity.steps}</div>
+              </div>
+            ` : ''}
+            ${entity.expected_result ? `
+              <div class="mb-3">
+                <strong>Expected Result:</strong>
+                <div class="mt-2 p-3 bg-light rounded">${entity.expected_result}</div>
+              </div>
+            ` : ''}
+          `;
+          break;
+      }
+
+      const html = `
+        <nav aria-label="breadcrumb" class="mb-4">
+          <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+              <a href="#" onclick="navigateTo('/')">Dashboard</a>
+            </li>
+            <li class="breadcrumb-item active" aria-current="page">
+              ${title}
+            </li>
+          </ol>
+        </nav>
+
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+              <h2 class="h4 mb-1">
+                <i class="bi ${entityIcon} me-2"></i>
+                ${title}
+              </h2>
+              <div class="text-muted small">
+                <i class="bi bi-tag me-1"></i>${entityType.replace('_', ' ')} #${entity.id}
+                <span class="badge bg-${statusBadge} ms-2">${entity.status}</span>
+                ${entity.phase ? `<span class="badge bg-info ms-1">${entity.phase}</span>` : ''}
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="small text-muted">
+                Created: ${formatDate(entity.created_at)}<br>
+                Updated: ${formatDate(entity.updated_at)}
+              </div>
+            </div>
+          </div>
+
+          <div class="card-body">
+            ${entity.description ? `
+              <div class="mb-4">
+                <h6>Description</h6>
+                <p class="mb-0">${entity.description}</p>
+              </div>
+            ` : ''}
+
+            ${attributesHtml}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+              <i class="bi bi-chat me-2"></i>
+              Comments
+            </h5>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadComments('${entityType}', ${entity.id})">
+              <i class="bi bi-arrow-clockwise me-1"></i>
+              Refresh
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="comments-content">
+              <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading comments...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('content').innerHTML = html;
+      loadComments(entityType, entity.id);
+    }
+
+    async function loadComments(entityType, entityId) {
+      try {
+        const response = await fetch(`/api/comments/${entityType}/${entityId}`);
+        const comments = await response.json();
+
+        const commentsHtml = comments.length === 0
+          ? '<p class="text-muted mb-0">No comments yet.</p>'
+          : comments.map(comment => `
+              <div class="comment-item mb-3 p-3 bg-light rounded">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <strong class="text-primary">${comment.author}</strong>
+                  <small class="text-muted">${formatDate(comment.created_at)}</small>
+                </div>
+                <p class="mb-0">${comment.comment_text}</p>
+              </div>
+            `).join('');
+
+        document.getElementById('comments-content').innerHTML = commentsHtml;
+      } catch (error) {
+        console.error('Error loading comments:', error);
+        document.getElementById('comments-content').innerHTML =
+          '<div class="alert alert-warning">Failed to load comments.</div>';
+      }
+    }
+
     async function loadData() {
       try {
         const response = await fetch('/api/epics');
@@ -249,7 +722,10 @@
         document.getElementById('loading').classList.add('d-none');
         document.getElementById('content').classList.remove('d-none');
 
-        renderSDLC();
+        // Check if we're on the dashboard route
+        if (window.location.pathname === '/' || window.location.pathname === '/dashboard') {
+          renderSDLC();
+        }
       } catch (error) {
         document.getElementById('loading').innerHTML = `
           <div class="alert alert-danger" role="alert">
@@ -261,44 +737,16 @@
       }
     }
 
-    async function showComments(entityType, entityId) {
-      try {
-        const response = await fetch(`/api/comments/${entityType}/${entityId}`);
-        const comments = await response.json();
-
-        let commentsHtml = '';
-        if (comments.length === 0) {
-          commentsHtml = '<p class="text-muted mb-0">No comments yet.</p>';
-        } else {
-          comments.forEach(comment => {
-            const commentDate = formatDate(comment.created_at);
-            commentsHtml += `
-              <div class="comment-item mb-3 p-3 bg-light rounded">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                  <strong class="text-primary">${comment.author}</strong>
-                  <small class="text-muted">${commentDate}</small>
-                </div>
-                <p class="mb-0">${comment.comment_text}</p>
-              </div>
-            `;
-          });
+    // Load data when page loads and handle routing
+    document.addEventListener('DOMContentLoaded', () => {
+      loadData().then(() => {
+        // Handle initial route
+        const path = window.location.pathname;
+        if (path !== '/' && path !== '/dashboard') {
+          renderRoute(path);
         }
-
-        // Update modal content
-        document.getElementById('commentsModalLabel').textContent = `Comments for ${entityType.replace('_', ' ')} #${entityId}`;
-        document.getElementById('commentsContent').innerHTML = commentsHtml;
-
-        // Show modal
-        const modal = new bootstrap.Modal(document.getElementById('commentsModal'));
-        modal.show();
-      } catch (error) {
-        console.error('Error loading comments:', error);
-        alert('Failed to load comments. Please try again.');
-      }
-    }
-
-    // Load data when page loads
-    document.addEventListener('DOMContentLoaded', loadData);
+      });
+    });
   </script>
 
   <!-- Comments Modal -->

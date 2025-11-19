@@ -222,6 +222,131 @@ app.get('/api/comments/:entityType/:entityId', async (req, res) => {
   }
 });
 
+// Get epic details
+app.get('/api/epic/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const database = getDatabase();
+
+    const epic = database.prepare('SELECT * FROM epics WHERE id = ?').get(parseInt(id));
+    if (!epic) {
+      return res.status(404).json({ error: 'Epic not found' });
+    }
+
+    // Get user story count
+    epic.user_story_count = database.prepare('SELECT COUNT(*) as count FROM user_stories WHERE epic_id = ?').get(parseInt(id)).count;
+
+    res.json(epic);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user story details
+app.get('/api/story/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const database = getDatabase();
+
+    const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(parseInt(id));
+    if (!story) {
+      return res.status(404).json({ error: 'User story not found' });
+    }
+
+    // Get dependencies
+    story.dependencies = database.prepare(`
+      SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
+      ORDER BY created_at
+    `).all(parseInt(id)).map((dep: any) => dep.dependency_story_id);
+
+    // Get dependent stories
+    story.dependent_stories = database.prepare(`
+      SELECT dependent_story_id FROM story_dependencies WHERE dependency_story_id = ?
+      ORDER BY created_at
+    `).all(parseInt(id)).map((dep: any) => dep.dependent_story_id);
+
+    // Get counts
+    story.task_count = database.prepare('SELECT COUNT(*) as count FROM tasks WHERE user_story_id = ?').get(parseInt(id)).count;
+    story.bug_count = database.prepare('SELECT COUNT(*) as count FROM bugs WHERE user_story_id = ?').get(parseInt(id)).count;
+    story.test_case_count = database.prepare('SELECT COUNT(*) as count FROM test_cases WHERE user_story_id = ?').get(parseInt(id)).count;
+
+    res.json(story);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get task details
+app.get('/api/task/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const database = getDatabase();
+
+    const task = database.prepare('SELECT * FROM tasks WHERE id = ?').get(parseInt(id));
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    res.json(task);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get bug details
+app.get('/api/bug/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const database = getDatabase();
+
+    const bug = database.prepare('SELECT * FROM bugs WHERE id = ?').get(parseInt(id));
+    if (!bug) {
+      return res.status(404).json({ error: 'Bug not found' });
+    }
+
+    res.json(bug);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get test case details
+app.get('/api/test-case/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const database = getDatabase();
+
+    const testCase = database.prepare('SELECT * FROM test_cases WHERE id = ?').get(parseInt(id));
+    if (!testCase) {
+      return res.status(404).json({ error: 'Test case not found' });
+    }
+
+    res.json(testCase);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Function to attempt browser opening
 async function tryOpenBrowser(url: string) {
   if (!isInitialized) {
