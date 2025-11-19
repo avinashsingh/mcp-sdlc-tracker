@@ -3,8 +3,16 @@
 
 import { z } from 'zod';
 
-// Helper function to get database (imported from main server)
-declare function getDatabase(): any;
+// Database accessor function (will be provided when registering tools)
+let getDatabase: () => any;
+
+// Safety check for database access
+function getDatabaseSafe(): any {
+  if (!getDatabase) {
+    throw new Error('Database not initialized. Wiki tools must be registered with a database accessor.');
+  }
+  return getDatabase();
+}
 
 // Tool: Create Wiki Page
 export function registerCreateWikiPage(server: any) {
@@ -29,7 +37,7 @@ export function registerCreateWikiPage(server: any) {
     },
     async ({ title, content, summary, tags, category, assigned_to }) => {
       try {
-        const database = getDatabase();
+        const database = getDatabaseSafe();
 
         // Generate slug from title
         const slug = title.toLowerCase()
@@ -111,7 +119,7 @@ export function registerUpdateWikiPage(server: any) {
     },
     async ({ wiki_page_id, title, content, summary, tags, category, assigned_to, change_reason }) => {
       try {
-        const database = getDatabase();
+        const database = getDatabaseSafe();
 
         // Get current page data
         const currentPage = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
@@ -239,7 +247,7 @@ export function registerListWikiPages(server: any) {
     },
     async ({ status, category, tags, linked_entity_type, linked_entity_id, limit = 50 }) => {
       try {
-        const database = getDatabase();
+        const database = getDatabaseSafe();
 
         let query = `
           SELECT wp.*,
@@ -358,7 +366,7 @@ export function registerGetWikiPage(server: any) {
     },
     async ({ wiki_page_id, slug }) => {
       try {
-        const database = getDatabase();
+        const database = getDatabaseSafe();
 
         let page;
         if (wiki_page_id) {
@@ -448,7 +456,7 @@ export function registerManageWikiLinks(server: any) {
     },
     async ({ wiki_page_id, action, links }) => {
       try {
-        const database = getDatabase();
+        const database = getDatabaseSafe();
 
         // Verify wiki page exists
         const page = database.prepare('SELECT id FROM wiki_pages WHERE id = ?').get(wiki_page_id);
@@ -523,7 +531,11 @@ export function registerManageWikiLinks(server: any) {
 }
 
 // Register all wiki tools
-export function registerAllWikiTools(server: any) {
+export function registerAllWikiTools(server: any, dbGetter: () => any) {
+  // Set the database accessor function
+  getDatabase = dbGetter;
+  console.log('✅ Wiki tools registered with database access');
+
   registerCreateWikiPage(server);
   registerUpdateWikiPage(server);
   registerListWikiPages(server);

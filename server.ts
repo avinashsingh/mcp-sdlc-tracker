@@ -2717,7 +2717,7 @@ server.registerTool(
 );
 
 // Register all wiki tools
-registerAllWikiTools(server);
+registerAllWikiTools(server, getDatabase);
 
 // Connect to stdio transport and start HTTP server
 
