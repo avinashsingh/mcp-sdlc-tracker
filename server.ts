@@ -2148,6 +2148,156 @@ function wouldCreateCircularDependency(database: any, storyId: number, dependenc
   return false;
 }
 
+// Tool: Update epic
+server.registerTool(
+  'update_epic',
+  {
+    title: 'Update Epic',
+    description: 'Update epic title, description, status, assignment, and phases',
+    inputSchema: {
+      epic_id: z.number(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      status: z.enum(['New', 'Open', 'Closed']).optional(),
+      assigned_to: z.string().optional(),
+      phase: z.string().optional(),
+      phase_status: z.string().optional(),
+      updated_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+    },
+    outputSchema: {
+      success: z.boolean(),
+      epic_id: z.number(),
+      changes: z.array(z.object({
+        field: z.string(),
+        old_value: z.any(),
+        new_value: z.any()
+      }))
+    }
+  },
+  async ({ epic_id, title, description, status, assigned_to, phase, phase_status, updated_by }) => {
+    try {
+      const database = getDatabase();
+
+      // Get current epic
+      const currentEpic = database.prepare('SELECT * FROM epics WHERE id = ?').get(epic_id);
+      if (!currentEpic) {
+        return {
+          content: [{ type: 'text', text: `Epic ${epic_id} not found` }],
+          isError: true
+        };
+      }
+
+      // Check if epic is archived
+      if (currentEpic.archived) {
+        return {
+          content: [{ type: 'text', text: `Cannot update archived epic ${epic_id}` }],
+          isError: true
+        };
+      }
+
+      // Build update query
+      const updates: string[] = [];
+      const params: any[] = [];
+      const changes: any[] = [];
+
+      if (title !== undefined && title !== currentEpic.title) {
+        updates.push('title = ?');
+        params.push(title);
+        changes.push({
+          field: 'title',
+          old_value: currentEpic.title,
+          new_value: title
+        });
+      }
+
+      if (description !== undefined && description !== currentEpic.description) {
+        updates.push('description = ?');
+        params.push(description);
+        changes.push({
+          field: 'description',
+          old_value: currentEpic.description,
+          new_value: description
+        });
+      }
+
+      if (status !== undefined && status !== currentEpic.status) {
+        updates.push('status = ?');
+        params.push(status);
+        changes.push({
+          field: 'status',
+          old_value: currentEpic.status,
+          new_value: status
+        });
+      }
+
+      if (assigned_to !== undefined && assigned_to !== currentEpic.assigned_to) {
+        updates.push('assigned_to = ?');
+        params.push(assigned_to);
+        changes.push({
+          field: 'assigned_to',
+          old_value: currentEpic.assigned_to,
+          new_value: assigned_to
+        });
+      }
+
+      if (phase !== undefined && phase !== currentEpic.phase) {
+        updates.push('phase = ?');
+        params.push(phase);
+        changes.push({
+          field: 'phase',
+          old_value: currentEpic.phase,
+          new_value: phase
+        });
+      }
+
+      if (phase_status !== undefined && phase_status !== currentEpic.phase_status) {
+        updates.push('phase_status = ?');
+        params.push(phase_status);
+        changes.push({
+          field: 'phase_status',
+          old_value: currentEpic.phase_status,
+          new_value: phase_status
+        });
+      }
+
+      if (updates.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No changes specified' }],
+          isError: true
+        };
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(epic_id);
+
+      // Execute update
+      const updateQuery = `UPDATE epics SET ${updates.join(', ')} WHERE id = ?`;
+      const result = database.prepare(updateQuery).run(...params);
+
+      if (result.changes === 0) {
+        return {
+          content: [{ type: 'text', text: 'Failed to update epic' }],
+          isError: true
+        };
+      }
+
+      return {
+        content: [{ type: 'text', text: `Updated epic ${epic_id} with ${changes.length} changes` }],
+        structuredContent: {
+          success: true,
+          epic_id,
+          changes
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to update epic: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 // Tool: Update user story content
 server.registerTool(
   'update_user_story_content',
