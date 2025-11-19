@@ -45,9 +45,28 @@ let db: Database | null = null;
 let dbPath: string | null = null;
 let isInitialized = false;
 
+// Helper function to convert SQLite boolean integers to actual booleans
+function convertSQLiteBooleans(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(convertSQLiteBooleans);
+  if (typeof obj === 'object') {
+    const result = { ...obj };
+    for (const key in result) {
+      if (key === 'archived' && (result[key] === 0 || result[key] === 1)) {
+        result[key] = result[key] === 1;
+      } else if (typeof result[key] === 'object') {
+        result[key] = convertSQLiteBooleans(result[key]);
+      }
+    }
+    return result;
+  }
+  return obj;
+}
+
 // HTTP Server state
 let httpPort: number | null = null;
 let browserOpened = false;
+
 
 function getDatabase(): Database {
   if (!isInitialized || !db) {
@@ -162,7 +181,7 @@ app.get('/api/epics', async (req, res) => {
       }
     }
 
-    res.json(epics);
+    res.json(convertSQLiteBooleans(epics));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -241,7 +260,7 @@ app.get('/api/epic/:id', async (req, res) => {
     // Get user story count
     epic.user_story_count = database.prepare('SELECT COUNT(*) as count FROM user_stories WHERE epic_id = ?').get(parseInt(id)).count;
 
-    res.json(epic);
+    res.json(convertSQLiteBooleans(epic));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -279,7 +298,7 @@ app.get('/api/story/:id', async (req, res) => {
     story.bug_count = database.prepare('SELECT COUNT(*) as count FROM bugs WHERE user_story_id = ?').get(parseInt(id)).count;
     story.test_case_count = database.prepare('SELECT COUNT(*) as count FROM test_cases WHERE user_story_id = ?').get(parseInt(id)).count;
 
-    res.json(story);
+    res.json(convertSQLiteBooleans(story));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -300,7 +319,7 @@ app.get('/api/task/:id', async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    res.json(task);
+    res.json(convertSQLiteBooleans(task));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -321,7 +340,7 @@ app.get('/api/bug/:id', async (req, res) => {
       return res.status(404).json({ error: 'Bug not found' });
     }
 
-    res.json(bug);
+    res.json(convertSQLiteBooleans(bug));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -342,7 +361,7 @@ app.get('/api/test-case/:id', async (req, res) => {
       return res.status(404).json({ error: 'Test case not found' });
     }
 
-    res.json(testCase);
+    res.json(convertSQLiteBooleans(testCase));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1292,22 +1311,22 @@ server.registerTool(
       const stmt = database.prepare(query);
       const epics = stmt.all(...params);
 
-       const output = {
-         data: epics,
-         total_count: epics.length,
-         filtered_count: epics.length,
-         phase_context: {
-           current_phase: "Not Set",
-           phase_status: "New",
-           active_stakeholders: ["productmanager"]
-         },
-         applied_filters,
-         pagination: {
-           limit,
-           offset: 0,
-           has_more: false
-         }
-       };
+        const output = {
+          data: convertSQLiteBooleans(epics),
+          total_count: epics.length,
+          filtered_count: epics.length,
+          phase_context: {
+            current_phase: "Not Set",
+            phase_status: "New",
+            active_stakeholders: ["productmanager"]
+          },
+          applied_filters,
+          pagination: {
+            limit,
+            offset: 0,
+            has_more: false
+          }
+        };
 
        return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
@@ -1477,7 +1496,7 @@ server.registerTool(
       appliedFilters.include_archived = include_archived;
 
       const output = {
-        data: limited_stories,
+        data: convertSQLiteBooleans(limited_stories),
         total_count: user_stories.length,
         filtered_count: limited_stories.length,
         phase_context: phaseContext,
@@ -1612,7 +1631,7 @@ server.registerTool(
       if (phase_status) appliedFilters.phase_status = phase_status;
 
       const output = {
-        data: bugs,
+        data: convertSQLiteBooleans(bugs),
         total_count: bugs.length,
         filtered_count: bugs.length,
         phase_context: phaseContext,
@@ -1730,7 +1749,7 @@ server.registerTool(
       if (phase_status) appliedFilters.phase_status = phase_status;
 
       const output = {
-        data: test_cases,
+        data: convertSQLiteBooleans(test_cases),
         total_count: test_cases.length,
         filtered_count: test_cases.length,
         phase_context: phaseContext,
@@ -1980,7 +1999,7 @@ server.registerTool(
       if (phase_status) appliedFilters.phase_status = phase_status;
 
       const output = {
-        data: tasks,
+        data: convertSQLiteBooleans(tasks),
         total_count: tasks.length,
         filtered_count: tasks.length,
         phase_context: phaseContext,

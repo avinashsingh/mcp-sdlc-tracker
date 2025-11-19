@@ -1,9 +1,0 @@
-
-> sqlite-mcp-tracker@1.0.0 start
-> tsx server.ts
-
-Database auto-initialized from existing file
-MCP server connected and ready
-🌐 Web UI available at http://localhost:9820
-📊 Dashboard ready - opening browser...
-🚀 Browser opened automatically
