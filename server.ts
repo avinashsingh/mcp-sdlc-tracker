@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import open from 'open';
 import { registerAllWikiTools } from './wiki-tools.js';
+import { createDatabaseSchema } from './database-schema.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -46,6 +47,8 @@ interface ListResponse<T> {
 let db: Database | null = null;
 let dbPath: string | null = null;
 let isInitialized = false;
+
+
 
 // Helper function to convert SQLite boolean integers to actual booleans
 function convertSQLiteBooleans(obj: any): any {
@@ -136,251 +139,7 @@ app.post('/api/initialize', async (req, res) => {
     dbPath = dbFilePath;
 
     // Execute all CREATE TABLE statements (same as MCP tool)
-    db.exec(`
-      -- Core SDLC Entities
-       CREATE TABLE IF NOT EXISTS epics (
-         id INTEGER PRIMARY KEY AUTOINCREMENT,
-         title TEXT NOT NULL,
-         description TEXT,
-         status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
-         created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-         owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-         assigned_to TEXT CHECK (assigned_to = 'productmanager'),
-         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-         closed_at DATETIME,
-         archived BOOLEAN DEFAULT FALSE,
-         archived_at DATETIME,
-         archived_by TEXT,
-         archive_reason TEXT
-       );
-
-      CREATE TABLE IF NOT EXISTS user_stories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        epic_id INTEGER,
-        title TEXT NOT NULL,
-        description TEXT,
-        acceptance_criteria TEXT,
-        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
-        story_points INTEGER,
-         phase TEXT,
-         phase_status TEXT DEFAULT 'New',
-         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-         tester_at DATETIME,
-         closed_at DATETIME,
-         archived BOOLEAN DEFAULT FALSE,
-         archived_at DATETIME,
-         archived_by TEXT,
-         archive_reason TEXT,
-         FOREIGN KEY (epic_id) REFERENCES epics(id) ON DELETE CASCADE
-       );
-
-      CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_story_id INTEGER,
-        title TEXT NOT NULL,
-        description TEXT,
-        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
-        estimated_hours INTEGER,
-        actual_hours INTEGER,
-        phase TEXT,
-        phase_status TEXT DEFAULT 'New',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        closed_at DATETIME,
-        priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
-        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS bugs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_story_id INTEGER,
-        task_id INTEGER,
-        title TEXT NOT NULL,
-        description TEXT,
-        severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
-        status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
-        reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        phase TEXT,
-        phase_status TEXT DEFAULT 'Open',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        fixed_at DATETIME,
-        closed_at DATETIME,
-        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS test_cases (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_story_id INTEGER,
-        title TEXT NOT NULL,
-        description TEXT,
-        preconditions TEXT,
-        steps TEXT NOT NULL,
-        expected_result TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
-        phase TEXT,
-        phase_status TEXT DEFAULT 'New',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        last_run_at DATETIME,
-        last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS story_dependencies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dependent_story_id INTEGER NOT NULL,
-        dependency_story_id INTEGER NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-
-        FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-        FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-
-        CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
-        UNIQUE(dependent_story_id, dependency_story_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS epic_dependencies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        dependent_epic_id INTEGER NOT NULL,
-        dependency_epic_id INTEGER NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-
-        FOREIGN KEY (dependent_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
-        FOREIGN KEY (dependency_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
-
-        CONSTRAINT no_self_epic_dependency CHECK (dependent_epic_id != dependency_epic_id),
-        UNIQUE(dependent_epic_id, dependency_epic_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS comments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-        entity_id INTEGER NOT NULL,
-        comment_text TEXT NOT NULL,
-        author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS user_story_content_changes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        story_id INTEGER NOT NULL,
-        field_name TEXT NOT NULL,
-        old_value TEXT,
-        new_value TEXT,
-        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (story_id) REFERENCES user_stories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS user_story_acceptance_changes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        story_id INTEGER NOT NULL,
-        old_acceptance_criteria TEXT,
-        new_acceptance_criteria TEXT,
-        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (story_id) REFERENCES user_stories(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS entity_changes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-        entity_id INTEGER NOT NULL,
-        field_name TEXT NOT NULL,
-        old_value TEXT,
-        new_value TEXT,
-        changed_by TEXT NOT NULL CHECK (changed_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      -- Wiki System Tables
-      CREATE TABLE IF NOT EXISTS wiki_pages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        slug TEXT UNIQUE NOT NULL,
-        content TEXT NOT NULL,
-        summary TEXT,
-        tags TEXT,
-        category TEXT CHECK (category IN ('technical', 'process', 'business', 'qa', 'knowledge')),
-        is_template BOOLEAN DEFAULT FALSE,
-        template_name TEXT,
-        created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        current_owner TEXT NOT NULL CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-        status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
-        version INTEGER DEFAULT 1,
-        parent_page_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        published_at DATETIME,
-        archived_at DATETIME,
-        archived_by TEXT,
-        FOREIGN KEY (parent_page_id) REFERENCES wiki_pages(id) ON DELETE SET NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS wiki_page_revisions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        page_id INTEGER NOT NULL,
-        version INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        summary TEXT,
-        tags TEXT,
-        changed_by TEXT NOT NULL,
-        change_reason TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS wiki_page_links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        wiki_page_id INTEGER NOT NULL,
-        entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-        entity_id INTEGER NOT NULL,
-        link_type TEXT DEFAULT 'related' CHECK (link_type IN ('related', 'documentation', 'requirements', 'design', 'testing')),
-        created_by TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (wiki_page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
-      );
-
-      -- Create indexes for better performance
-      CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
-      CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
-      CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
-      CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
-      CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
-      CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
-      CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
-      CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
-      CREATE INDEX IF NOT EXISTS idx_entity_changes ON entity_changes(entity_type, entity_id);
-
-      -- Wiki indexes
-      CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
-      CREATE INDEX IF NOT EXISTS idx_wiki_pages_category ON wiki_pages(category);
-      CREATE INDEX IF NOT EXISTS idx_wiki_pages_status ON wiki_pages(status);
-      CREATE INDEX IF NOT EXISTS idx_wiki_page_links_entity ON wiki_page_links(entity_type, entity_id);
-      CREATE INDEX IF NOT EXISTS idx_wiki_page_revisions_page ON wiki_page_revisions(page_id, version);
-    `);
+    createDatabaseSchema(db);
 
     isInitialized = true;
 
@@ -984,284 +743,7 @@ server.registerTool(
       dbPath = dbFilePath;
 
       // Execute all CREATE TABLE statements
-      db.exec(`
-        -- Core SDLC Entities
-         CREATE TABLE IF NOT EXISTS epics (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           title TEXT NOT NULL,
-           description TEXT,
-           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Open', 'Closed')),
-           created_by TEXT NOT NULL DEFAULT 'productmanager' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           assigned_to TEXT CHECK (assigned_to = 'productmanager'),
-           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           closed_at DATETIME,
-           archived BOOLEAN DEFAULT FALSE,
-           archived_at DATETIME,
-           archived_by TEXT,
-           archive_reason TEXT
-         );
-
-        CREATE TABLE IF NOT EXISTS user_stories (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          epic_id INTEGER,
-          title TEXT NOT NULL,
-          description TEXT,
-          acceptance_criteria TEXT,
-          status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'QA', 'UAT', 'Closed')),
-          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          current_owner TEXT NOT NULL DEFAULT 'productmanager' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'architect', 'developer', 'tester')),
-          story_points INTEGER,
-           phase TEXT,
-           phase_status TEXT DEFAULT 'New',
-           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           tester_at DATETIME,
-           closed_at DATETIME,
-           archived BOOLEAN DEFAULT FALSE,
-           archived_at DATETIME,
-           archived_by TEXT,
-           archive_reason TEXT,
-           FOREIGN KEY (epic_id) REFERENCES epics(id)
-         );
-
-        CREATE TABLE IF NOT EXISTS tasks (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           user_story_id INTEGER,
-           title TEXT NOT NULL,
-           description TEXT,
-           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
-           created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
-           estimated_hours DECIMAL(5,2),
-           actual_hours DECIMAL(5,2),
-           phase TEXT,
-           phase_status TEXT DEFAULT 'New',
-           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           closed_at DATETIME,
-           FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-         );
-
-        CREATE TABLE IF NOT EXISTS bugs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_story_id INTEGER,
-          task_id INTEGER,
-          title TEXT NOT NULL,
-          description TEXT,
-          severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
-          status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
-          reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          current_owner TEXT CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          phase TEXT,
-          phase_status TEXT DEFAULT 'Open',
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          fixed_at DATETIME,
-          closed_at DATETIME,
-          FOREIGN KEY (user_story_id) REFERENCES user_stories(id),
-          FOREIGN KEY (task_id) REFERENCES tasks(id)
-        );
-
-         CREATE TABLE IF NOT EXISTS test_cases (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           user_story_id INTEGER,
-           title TEXT NOT NULL,
-           description TEXT,
-           preconditions TEXT,
-           steps TEXT NOT NULL,
-           expected_result TEXT NOT NULL,
-           status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Passed', 'Failed')),
-           created_by TEXT NOT NULL DEFAULT 'tester' CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           current_owner TEXT NOT NULL DEFAULT 'tester' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           assigned_to TEXT CHECK (assigned_to IN ('tester', 'productmanager')),
-           phase TEXT,
-           phase_status TEXT DEFAULT 'New',
-           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           last_run_at DATETIME,
-           last_run_by TEXT CHECK (last_run_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-           FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
-         );
-
-          CREATE TABLE IF NOT EXISTS story_dependencies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dependent_story_id INTEGER NOT NULL,
-            dependency_story_id INTEGER NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-
-            FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-            FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-
-            CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
-            UNIQUE(dependent_story_id, dependency_story_id)
-          );
-
-          CREATE TABLE IF NOT EXISTS epic_dependencies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dependent_epic_id INTEGER NOT NULL,
-            dependency_epic_id INTEGER NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-
-            FOREIGN KEY (dependent_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
-            FOREIGN KEY (dependency_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
-
-            CONSTRAINT no_self_epic_dependency CHECK (dependent_epic_id != dependency_epic_id),
-            UNIQUE(dependent_epic_id, dependency_epic_id)
-          );
-
-         CREATE TABLE IF NOT EXISTS user_story_content_changes (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           story_id INTEGER NOT NULL,
-           field_name TEXT NOT NULL,
-           old_value TEXT,
-           new_value TEXT,
-           changed_by TEXT NOT NULL,
-           changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           FOREIGN KEY (story_id) REFERENCES user_stories(id)
-         );
-
-         CREATE TABLE IF NOT EXISTS user_story_acceptance_changes (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           story_id INTEGER NOT NULL,
-           old_acceptance_criteria TEXT,
-           new_acceptance_criteria TEXT,
-           changed_by TEXT NOT NULL,
-           changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           FOREIGN KEY (story_id) REFERENCES user_stories(id)
-         );
-
-        CREATE TABLE IF NOT EXISTS comments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-          entity_id INTEGER NOT NULL,
-          comment_text TEXT NOT NULL,
-          author TEXT NOT NULL CHECK (author IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Supporting Tables for Audit Trail
-        CREATE TABLE IF NOT EXISTS ownership_transitions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-          entity_id INTEGER NOT NULL,
-          from_owner TEXT CHECK (from_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          to_owner TEXT NOT NULL CHECK (to_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
-        );
-
-        CREATE TABLE IF NOT EXISTS status_transitions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-          entity_id INTEGER NOT NULL,
-          from_status TEXT,
-          to_status TEXT NOT NULL,
-          transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
-        );
-
-        -- Wiki System Tables
-        CREATE TABLE IF NOT EXISTS wiki_pages (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT NOT NULL,
-          slug TEXT UNIQUE NOT NULL,
-          content TEXT NOT NULL,
-          summary TEXT,
-          tags TEXT,
-          category TEXT CHECK (category IN ('technical', 'process', 'business', 'qa', 'knowledge')),
-          is_template BOOLEAN DEFAULT FALSE,
-          template_name TEXT,
-          created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          current_owner TEXT NOT NULL CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
-          status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
-          version INTEGER DEFAULT 1,
-          parent_page_id INTEGER,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          published_at DATETIME,
-          archived_at DATETIME,
-          archived_by TEXT,
-          FOREIGN KEY (parent_page_id) REFERENCES wiki_pages(id) ON DELETE SET NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS wiki_page_revisions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          page_id INTEGER NOT NULL,
-          version INTEGER NOT NULL,
-          title TEXT NOT NULL,
-          content TEXT NOT NULL,
-          summary TEXT,
-          tags TEXT,
-          changed_by TEXT NOT NULL,
-          change_reason TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS wiki_page_links (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          wiki_page_id INTEGER NOT NULL,
-          entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
-          entity_id INTEGER NOT NULL,
-          link_type TEXT DEFAULT 'related' CHECK (link_type IN ('related', 'documentation', 'requirements', 'design', 'testing')),
-          created_by TEXT NOT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (wiki_page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
-        );
-      `);
-
-      // Create indexes for performance
-      db.exec(`
-        -- Core entity indexes
-        CREATE INDEX IF NOT EXISTS idx_epics_status ON epics(status);
-        CREATE INDEX IF NOT EXISTS idx_user_stories_epic_id ON user_stories(epic_id);
-        CREATE INDEX IF NOT EXISTS idx_user_stories_status ON user_stories(status);
-        CREATE INDEX IF NOT EXISTS idx_tasks_user_story_id ON tasks(user_story_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-        CREATE INDEX IF NOT EXISTS idx_bugs_user_story_id ON bugs(user_story_id);
-        CREATE INDEX IF NOT EXISTS idx_bugs_task_id ON bugs(task_id);
-        CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
-        CREATE INDEX IF NOT EXISTS idx_test_cases_user_story_id ON test_cases(user_story_id);
-        CREATE INDEX IF NOT EXISTS idx_test_cases_status ON test_cases(status);
-        CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
-
-        -- Transition audit indexes
-        CREATE INDEX IF NOT EXISTS idx_ownership_transitions_entity ON ownership_transitions(entity_type, entity_id);
-        CREATE INDEX IF NOT EXISTS idx_status_transitions_entity ON status_transitions(entity_type, entity_id);
-
-        -- Phase tracking indexes
-        CREATE INDEX IF NOT EXISTS idx_user_stories_phase ON user_stories(phase);
-         CREATE INDEX IF NOT EXISTS idx_user_stories_phase_status ON user_stories(phase_status);
-         CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
-         CREATE INDEX IF NOT EXISTS idx_tasks_phase_status ON tasks(phase_status);
-         CREATE INDEX IF NOT EXISTS idx_bugs_phase ON bugs(phase);
-         CREATE INDEX IF NOT EXISTS idx_bugs_phase_status ON bugs(phase_status);
-         CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
-         CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
-
-          CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
-          CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
-
-          CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
-          CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
-
-          -- Wiki indexes
-          CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
-          CREATE INDEX IF NOT EXISTS idx_wiki_pages_category ON wiki_pages(category);
-          CREATE INDEX IF NOT EXISTS idx_wiki_pages_status ON wiki_pages(status);
-          CREATE INDEX IF NOT EXISTS idx_wiki_page_links_entity ON wiki_page_links(entity_type, entity_id);
-          CREATE INDEX IF NOT EXISTS idx_wiki_page_revisions_page ON wiki_page_revisions(page_id, version);
-      `);
+      createDatabaseSchema(db);
 
       isInitialized = true;
 
@@ -2577,6 +2059,657 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Failed to manage story dependencies: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Update Epic
+server.registerTool(
+  'update_epic',
+  {
+    title: 'Update Epic',
+    description: 'Update epic title, description, status, assignment, and phases',
+    inputSchema: {
+      epic_id: z.number(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      status: z.enum(['New', 'Open', 'Closed']).optional(),
+      assigned_to: z.enum(['productmanager']).optional(),
+      phase: z.string().optional(),
+      phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+    },
+    outputSchema: {
+      success: z.boolean(),
+      epic_id: z.number(),
+      changes: z.array(z.object({
+        field: z.string(),
+        old_value: z.any(),
+        new_value: z.any()
+      })).optional(),
+      error: z.string().optional()
+    }
+  },
+  async ({ epic_id, title, description, status, assigned_to, phase, phase_status }) => {
+    try {
+      const database = getDatabase();
+
+      // Check if epic exists and is not archived
+      const epic = database.prepare('SELECT * FROM epics WHERE id = ?').get(epic_id);
+      if (!epic) {
+        return {
+          content: [{ type: 'text', text: 'Epic not found' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Epic not found'
+          }
+        };
+      }
+
+      if (epic.archived) {
+        return {
+          content: [{ type: 'text', text: 'Cannot update archived epic' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Cannot update archived epic'
+          }
+        };
+      }
+
+      // Build update query dynamically
+      const updates = [];
+      const params = [];
+      const changes = [];
+
+      if (title !== undefined && title !== epic.title) {
+        updates.push('title = ?');
+        params.push(title);
+        changes.push({ field: 'title', old_value: epic.title, new_value: title });
+      }
+
+      if (description !== undefined && description !== epic.description) {
+        updates.push('description = ?');
+        params.push(description);
+        changes.push({ field: 'description', old_value: epic.description, new_value: description });
+      }
+
+      if (status !== undefined && status !== epic.status) {
+        updates.push('status = ?');
+        params.push(status);
+        changes.push({ field: 'status', old_value: epic.status, new_value: status });
+      }
+
+      if (assigned_to !== undefined && assigned_to !== epic.assigned_to) {
+        updates.push('assigned_to = ?');
+        params.push(assigned_to);
+        changes.push({ field: 'assigned_to', old_value: epic.assigned_to, new_value: assigned_to });
+      }
+
+      if (phase !== undefined && phase !== epic.phase) {
+        updates.push('phase = ?');
+        params.push(phase);
+        changes.push({ field: 'phase', old_value: epic.phase, new_value: phase });
+      }
+
+      if (phase_status !== undefined && phase_status !== epic.phase_status) {
+        updates.push('phase_status = ?');
+        params.push(phase_status);
+        changes.push({ field: 'phase_status', old_value: epic.phase_status, new_value: phase_status });
+      }
+
+      if (updates.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No changes to update' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'No changes to update'
+          }
+        };
+      }
+
+      // Add updated_at timestamp
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(epic_id);
+
+      const sql = `UPDATE epics SET ${updates.join(', ')} WHERE id = ?`;
+      const result = database.prepare(sql).run(...params);
+
+      if (result.changes > 0) {
+        return {
+          content: [{ type: 'text', text: `Epic ${epic_id} updated successfully` }],
+          structuredContent: {
+            success: true,
+            epic_id,
+            changes
+          }
+        };
+      } else {
+        return {
+          content: [{ type: 'text', text: 'Failed to update epic' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Failed to update epic'
+          }
+        };
+      }
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error updating epic: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Archive Epic
+server.registerTool(
+  'archive_epic',
+  {
+    title: 'Archive Epic',
+    description: 'Archive epics (product managers only)',
+    inputSchema: {
+      epic_id: z.number(),
+      archive_reason: z.string().optional()
+    },
+    outputSchema: {
+      success: z.boolean(),
+      epic_id: z.number(),
+      error: z.string().optional()
+    }
+  },
+  async ({ epic_id, archive_reason }) => {
+    try {
+      const database = getDatabase();
+
+      // Check if epic exists
+      const epic = database.prepare('SELECT * FROM epics WHERE id = ?').get(epic_id);
+      if (!epic) {
+        return {
+          content: [{ type: 'text', text: 'Epic not found' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Epic not found'
+          }
+        };
+      }
+
+      if (epic.archived) {
+        return {
+          content: [{ type: 'text', text: 'Epic is already archived' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Epic is already archived'
+          }
+        };
+      }
+
+      // Archive the epic
+      const result = database.prepare(`
+        UPDATE epics
+        SET archived = 1, archived_at = CURRENT_TIMESTAMP, archive_reason = ?
+        WHERE id = ?
+      `).run(archive_reason || null, epic_id);
+
+      if (result.changes > 0) {
+        return {
+          content: [{ type: 'text', text: `Epic ${epic_id} archived successfully` }],
+          structuredContent: {
+            success: true,
+            epic_id
+          }
+        };
+      } else {
+        return {
+          content: [{ type: 'text', text: 'Failed to archive epic' }],
+          structuredContent: {
+            success: false,
+            epic_id,
+            error: 'Failed to archive epic'
+          }
+        };
+      }
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error archiving epic: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Update User Story Content
+server.registerTool(
+  'update_user_story_content',
+  {
+    title: 'Update User Story Content',
+    description: 'Update user story title, description, and story points (all stakeholders)',
+    inputSchema: {
+      story_id: z.number(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      story_points: z.number().optional()
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      changes: z.array(z.object({
+        field: z.string(),
+        old_value: z.any(),
+        new_value: z.any()
+      })).optional(),
+      error: z.string().optional()
+    }
+  },
+  async ({ story_id, title, description, story_points }) => {
+    try {
+      const database = getDatabase();
+
+      // Check if story exists and is not archived
+      const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(story_id);
+      if (!story) {
+        return {
+          content: [{ type: 'text', text: 'User story not found' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'User story not found'
+          }
+        };
+      }
+
+      if (story.archived) {
+        return {
+          content: [{ type: 'text', text: 'Cannot update archived user story' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'Cannot update archived user story'
+          }
+        };
+      }
+
+      // Build update query dynamically
+      const updates = [];
+      const params = [];
+      const changes = [];
+
+      if (title !== undefined && title !== story.title) {
+        updates.push('title = ?');
+        params.push(title);
+        changes.push({ field: 'title', old_value: story.title, new_value: title });
+      }
+
+      if (description !== undefined && description !== story.description) {
+        updates.push('description = ?');
+        params.push(description);
+        changes.push({ field: 'description', old_value: story.description, new_value: description });
+      }
+
+      if (story_points !== undefined && story_points !== story.story_points) {
+        updates.push('story_points = ?');
+        params.push(story_points);
+        changes.push({ field: 'story_points', old_value: story.story_points, new_value: story_points });
+      }
+
+      if (updates.length === 0) {
+        return {
+          content: [{ type: 'text', text: 'No changes to update' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'No changes to update'
+          }
+        };
+      }
+
+      // Add updated_at timestamp
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(story_id);
+
+      const sql = `UPDATE user_stories SET ${updates.join(', ')} WHERE id = ?`;
+      const result = database.prepare(sql).run(...params);
+
+      if (result.changes > 0) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} updated successfully` }],
+          structuredContent: {
+            success: true,
+            story_id,
+            changes
+          }
+        };
+      } else {
+        return {
+          content: [{ type: 'text', text: 'Failed to update user story' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'Failed to update user story'
+          }
+        };
+      }
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error updating user story: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Update User Story Acceptance Criteria
+server.registerTool(
+  'update_user_story_acceptance_criteria',
+  {
+    title: 'Update User Story Acceptance Criteria',
+    description: 'Update user story acceptance criteria (product managers only)',
+    inputSchema: {
+      story_id: z.number(),
+      acceptance_criteria: z.string()
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      old_acceptance_criteria: z.string().nullable(),
+      new_acceptance_criteria: z.string(),
+      error: z.string().optional()
+    }
+  },
+  async ({ story_id, acceptance_criteria }) => {
+    try {
+      const database = getDatabase();
+
+      // Check if story exists and is not archived
+      const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(story_id);
+      if (!story) {
+        return {
+          content: [{ type: 'text', text: 'User story not found' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'User story not found'
+          }
+        };
+      }
+
+      if (story.archived) {
+        return {
+          content: [{ type: 'text', text: 'Cannot update archived user story' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'Cannot update archived user story'
+          }
+        };
+      }
+
+      // Update acceptance criteria
+      const result = database.prepare(`
+        UPDATE user_stories
+        SET acceptance_criteria = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(acceptance_criteria, story_id);
+
+      if (result.changes > 0) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} acceptance criteria updated successfully` }],
+          structuredContent: {
+            success: true,
+            story_id,
+            old_acceptance_criteria: story.acceptance_criteria,
+            new_acceptance_criteria: acceptance_criteria
+          }
+        };
+      } else {
+        return {
+          content: [{ type: 'text', text: 'Failed to update user story acceptance criteria' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'Failed to update user story acceptance criteria'
+          }
+        };
+      }
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error updating user story acceptance criteria: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Archive User Story
+server.registerTool(
+  'archive_user_story',
+  {
+    title: 'Archive User Story',
+    description: 'Archive user stories (product managers only)',
+    inputSchema: {
+      story_id: z.number(),
+      archive_reason: z.string().optional()
+    },
+    outputSchema: {
+      success: z.boolean(),
+      story_id: z.number(),
+      error: z.string().optional()
+    }
+  },
+  async ({ story_id, archive_reason }) => {
+    try {
+      const database = getDatabase();
+
+      // Check if story exists
+      const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(story_id);
+      if (!story) {
+        return {
+          content: [{ type: 'text', text: 'User story not found' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'User story not found'
+          }
+        };
+      }
+
+      if (story.archived) {
+        return {
+          content: [{ type: 'text', text: 'User story is already archived' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'User story is already archived'
+          }
+        };
+      }
+
+      // Archive the user story
+      const result = database.prepare(`
+        UPDATE user_stories
+        SET archived = 1, archived_at = CURRENT_TIMESTAMP, archive_reason = ?
+        WHERE id = ?
+      `).run(archive_reason || null, story_id);
+
+      if (result.changes > 0) {
+        return {
+          content: [{ type: 'text', text: `User story ${story_id} archived successfully` }],
+          structuredContent: {
+            success: true,
+            story_id
+          }
+        };
+      } else {
+        return {
+          content: [{ type: 'text', text: 'Failed to archive user story' }],
+          structuredContent: {
+            success: false,
+            story_id,
+            error: 'Failed to archive user story'
+          }
+        };
+      }
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error archiving user story: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Manage Epic Dependencies
+server.registerTool(
+  'manage_epic_dependencies',
+  {
+    title: 'Manage Epic Dependencies',
+    description: 'Add or remove dependencies for multiple epics in bulk',
+    inputSchema: {
+      operations: z.array(z.object({
+        epic_id: z.number(),
+        action: z.enum(['add', 'remove']),
+        dependency_epic_ids: z.array(z.number()).min(1)
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        epic_id: z.number(),
+        success: z.boolean(),
+        action: z.string(),
+        added_dependencies: z.array(z.number()).optional(),
+        removed_dependencies: z.array(z.number()).optional(),
+        errors: z.array(z.string()).optional()
+      }))
+    }
+  },
+  async ({ operations }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      // Process operations in a transaction
+      const transaction = database.transaction(() => {
+        operations.forEach(operation => {
+          const { epic_id, action, dependency_epic_ids } = operation;
+          const result = {
+            epic_id,
+            success: true,
+            action,
+            added_dependencies: [],
+            removed_dependencies: [],
+            errors: []
+          };
+
+          try {
+            // Validate epic exists
+            const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(epic_id);
+            if (!epic) {
+              result.success = false;
+              result.errors.push(`Epic ${epic_id} not found`);
+              results.push(result);
+              return;
+            }
+
+            dependency_epic_ids.forEach(depEpicId => {
+              // Validate dependency epic exists
+              const depEpic = database.prepare('SELECT id FROM epics WHERE id = ?').get(depEpicId);
+              if (!depEpic) {
+                result.errors.push(`Dependency epic ${depEpicId} not found`);
+                return;
+              }
+
+              // Check for self-dependency
+              if (epic_id === depEpicId) {
+                result.errors.push(`Cannot create self-dependency for epic ${epic_id}`);
+                return;
+              }
+
+              // Check for circular dependency
+              if (action === 'add') {
+                // Check if depEpicId already depends on epic_id (directly or indirectly)
+                const reverseDependencyExists = database.prepare(`
+                  WITH RECURSIVE dependency_chain(dependent_id, dependency_id) AS (
+                    SELECT dependent_epic_id, dependency_epic_id FROM epic_dependencies
+                    WHERE dependent_epic_id = ?
+                    UNION ALL
+                    SELECT ed.dependent_epic_id, ed.dependency_epic_id
+                    FROM epic_dependencies ed
+                    INNER JOIN dependency_chain dc ON ed.dependent_epic_id = dc.dependency_id
+                  )
+                  SELECT 1 FROM dependency_chain WHERE dependency_id = ?
+                  LIMIT 1
+                `).get(depEpicId, epic_id);
+
+                if (reverseDependencyExists) {
+                  result.errors.push(`Adding dependency ${epic_id} → ${depEpicId} would create circular dependency`);
+                  return;
+                }
+              }
+
+              if (action === 'add') {
+                // Check if dependency already exists
+                const existing = database.prepare(`
+                  SELECT id FROM epic_dependencies
+                  WHERE dependent_epic_id = ? AND dependency_epic_id = ?
+                `).get(epic_id, depEpicId);
+
+                if (!existing) {
+                  database.prepare(`
+                    INSERT INTO epic_dependencies (dependent_epic_id, dependency_epic_id, created_by)
+                    VALUES (?, ?, ?)
+                  `).run(epic_id, depEpicId, 'productmanager');
+                  result.added_dependencies.push(depEpicId);
+                }
+              } else if (action === 'remove') {
+                const deleted = database.prepare(`
+                  DELETE FROM epic_dependencies
+                  WHERE dependent_epic_id = ? AND dependency_epic_id = ?
+                `).run(epic_id, depEpicId);
+
+                if (deleted.changes > 0) {
+                  result.removed_dependencies.push(depEpicId);
+                }
+              }
+            });
+
+            // Mark as failed if there were any errors
+            if (result.errors.length > 0) {
+              result.success = false;
+            }
+
+          } catch (error) {
+            result.success = false;
+            result.errors.push(`Database error: ${error.message}`);
+          }
+
+          results.push(result);
+        });
+      });
+
+      // Execute transaction
+      transaction();
+
+      return {
+        content: [{ type: 'text', text: `Processed ${operations.length} epic dependency operations` }],
+        structuredContent: {
+          results
+        }
+      };
+
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to manage epic dependencies: ${error.message}` }],
         isError: true
       };
     }

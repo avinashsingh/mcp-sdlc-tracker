@@ -4,3 +4,4 @@ tracker.db
 .claude_consciousness.m8
 *.log
 *.db
+test-results
