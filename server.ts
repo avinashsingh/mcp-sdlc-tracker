@@ -141,6 +141,18 @@ app.get('/api/epics', async (req, res) => {
         SELECT COUNT(*) as count FROM comments WHERE entity_type = 'epic' AND entity_id = ?
       `).get(epic.id).count;
 
+      // Get dependencies (epics this epic depends on)
+      const depRows = database.prepare(`
+        SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+      `).all(epic.id);
+      epic.dependencies = depRows.map(row => row.dependency_epic_id);
+
+      // Get dependent epics (epics that depend on this epic)
+      const depEpicRows = database.prepare(`
+        SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
+      `).all(epic.id);
+      epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
+
       // Get tasks, bugs, and test cases for each user story
       for (const userStory of epic.userStories) {
         userStory.tasks = database.prepare(`
@@ -260,6 +272,21 @@ app.get('/api/epic/:id', async (req, res) => {
     // Get user story count
     epic.user_story_count = database.prepare('SELECT COUNT(*) as count FROM user_stories WHERE epic_id = ?').get(parseInt(id)).count;
 
+    // Get comment count
+    epic.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('epic', parseInt(id)).count;
+
+    // Get dependencies (epics this epic depends on)
+    const depRows = database.prepare(`
+      SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+    `).all(parseInt(id));
+    epic.dependencies = depRows.map(row => row.dependency_epic_id);
+
+    // Get dependent epics (epics that depend on this epic)
+    const depEpicRows = database.prepare(`
+      SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
+    `).all(parseInt(id));
+    epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
+
     res.json(convertSQLiteBooleans(epic));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -297,6 +324,7 @@ app.get('/api/story/:id', async (req, res) => {
     story.task_count = database.prepare('SELECT COUNT(*) as count FROM tasks WHERE user_story_id = ?').get(parseInt(id)).count;
     story.bug_count = database.prepare('SELECT COUNT(*) as count FROM bugs WHERE user_story_id = ?').get(parseInt(id)).count;
     story.test_case_count = database.prepare('SELECT COUNT(*) as count FROM test_cases WHERE user_story_id = ?').get(parseInt(id)).count;
+    story.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('user_story', parseInt(id)).count;
 
     res.json(convertSQLiteBooleans(story));
   } catch (error) {
@@ -319,6 +347,9 @@ app.get('/api/task/:id', async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    // Get comment count
+    task.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('task', parseInt(id)).count;
+
     res.json(convertSQLiteBooleans(task));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -340,6 +371,9 @@ app.get('/api/bug/:id', async (req, res) => {
       return res.status(404).json({ error: 'Bug not found' });
     }
 
+    // Get comment count
+    bug.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('bug', parseInt(id)).count;
+
     res.json(convertSQLiteBooleans(bug));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -360,6 +394,9 @@ app.get('/api/test-case/:id', async (req, res) => {
     if (!testCase) {
       return res.status(404).json({ error: 'Test case not found' });
     }
+
+    // Get comment count
+    testCase.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('test_case', parseInt(id)).count;
 
     res.json(convertSQLiteBooleans(testCase));
   } catch (error) {
@@ -563,19 +600,33 @@ server.registerTool(
            FOREIGN KEY (user_story_id) REFERENCES user_stories(id)
          );
 
-         CREATE TABLE IF NOT EXISTS story_dependencies (
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           dependent_story_id INTEGER NOT NULL,
-           dependency_story_id INTEGER NOT NULL,
-           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-           created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+          CREATE TABLE IF NOT EXISTS story_dependencies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dependent_story_id INTEGER NOT NULL,
+            dependency_story_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
 
-           FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
-           FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+            FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+            FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
 
-           CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
-           UNIQUE(dependent_story_id, dependency_story_id)
-         );
+            CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
+            UNIQUE(dependent_story_id, dependency_story_id)
+          );
+
+          CREATE TABLE IF NOT EXISTS epic_dependencies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dependent_epic_id INTEGER NOT NULL,
+            dependency_epic_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+            FOREIGN KEY (dependent_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+            FOREIGN KEY (dependency_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+
+            CONSTRAINT no_self_epic_dependency CHECK (dependent_epic_id != dependency_epic_id),
+            UNIQUE(dependent_epic_id, dependency_epic_id)
+          );
 
          CREATE TABLE IF NOT EXISTS user_story_content_changes (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -659,8 +710,11 @@ server.registerTool(
          CREATE INDEX IF NOT EXISTS idx_test_cases_phase ON test_cases(phase);
          CREATE INDEX IF NOT EXISTS idx_test_cases_phase_status ON test_cases(phase_status);
 
-         CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
-         CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
+          CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependent ON story_dependencies(dependent_story_id);
+          CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
+
+          CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
+          CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
       `);
 
       isInitialized = true;
@@ -944,8 +998,133 @@ server.registerTool(
          isError: true
        };
     }
-   }
- );
+  }
+);
+
+// Tool: Manage Epic Dependencies
+server.registerTool(
+  'manage_epic_dependencies',
+  {
+    title: 'Manage Epic Dependencies',
+    description: 'Add or remove dependencies for multiple epics in bulk',
+    inputSchema: {
+      operations: z.array(z.object({
+        epic_id: z.number(),
+        action: z.enum(['add', 'remove']),
+        dependency_epic_ids: z.array(z.number()).min(1)
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        epic_id: z.number(),
+        success: z.boolean(),
+        action: z.string(),
+        added_dependencies: z.array(z.number()).optional(),
+        removed_dependencies: z.array(z.number()).optional(),
+        errors: z.array(z.string()).optional()
+      }))
+    }
+  },
+  async ({ operations }) => {
+    try {
+      const database = getDatabase();
+      const results: any[] = [];
+
+      // Process operations in a transaction
+      const transaction = database.transaction(() => {
+        operations.forEach(operation => {
+          const { epic_id, action, dependency_epic_ids } = operation;
+          const result = {
+            epic_id,
+            success: true,
+            action,
+            added_dependencies: [] as number[],
+            removed_dependencies: [] as number[],
+            errors: [] as string[]
+          };
+
+          try {
+            // Validate epic exists
+            const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(epic_id);
+            if (!epic) {
+              result.success = false;
+              result.errors.push(`Epic ${epic_id} not found`);
+              results.push(result);
+              return;
+            }
+
+            dependency_epic_ids.forEach(depEpicId => {
+              // Validate dependency epic exists
+              const depEpic = database.prepare('SELECT id FROM epics WHERE id = ?').get(depEpicId);
+              if (!depEpic) {
+                result.errors.push(`Dependency epic ${depEpicId} not found`);
+                return;
+              }
+
+              // Prevent self-dependency
+              if (epic_id === depEpicId) {
+                result.errors.push(`Cannot create self-dependency for epic ${epic_id}`);
+                return;
+              }
+
+              // Check for circular dependencies
+              if (wouldCreateCircularEpicDependency(database, epic_id, depEpicId)) {
+                result.errors.push(`Circular dependency detected with epic ${depEpicId}`);
+                return;
+              }
+
+              if (action === 'add') {
+                // Insert dependency (ignore if already exists)
+                database.prepare(`
+                  INSERT OR IGNORE INTO epic_dependencies
+                  (dependent_epic_id, dependency_epic_id, created_by)
+                  VALUES (?, ?, ?)
+                `).run(epic_id, depEpicId, 'productmanager');
+
+                result.added_dependencies.push(depEpicId);
+
+              } else if (action === 'remove') {
+                // Remove dependency
+                const deleteResult = database.prepare(`
+                  DELETE FROM epic_dependencies
+                  WHERE dependent_epic_id = ? AND dependency_epic_id = ?
+                `).run(epic_id, depEpicId);
+
+                if (deleteResult.changes > 0) {
+                  result.removed_dependencies.push(depEpicId);
+                } else {
+                  result.errors.push(`Dependency on epic ${depEpicId} not found`);
+                }
+              }
+            });
+
+            if (result.errors.length > 0) {
+              result.success = false;
+            }
+
+          } catch (error) {
+            result.success = false;
+            result.errors.push(error.message);
+          }
+
+          results.push(result);
+        });
+      });
+
+      transaction();
+
+      return {
+        content: [{ type: 'text', text: `Processed ${operations.length} epic dependency operations` }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to manage epic dependencies: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
 
 // Tool: Create Bugs
 server.registerTool(
@@ -1268,7 +1447,10 @@ server.registerTool(
         archived_by: z.string().nullable(),
         archive_reason: z.string().nullable(),
         created_at: z.string(),
-        updated_at: z.string()
+        updated_at: z.string(),
+        comment_count: z.number(),
+        dependencies: z.array(z.number()), // Epic IDs this epic depends on
+        dependent_epics: z.array(z.number()) // Epic IDs that depend on this epic
       })),
       total_count: z.number(),
       filtered_count: z.number(),
@@ -1311,7 +1493,26 @@ server.registerTool(
       const stmt = database.prepare(query);
       const epics = stmt.all(...params);
 
-        const output = {
+      // Add comment count and dependency information to each epic
+      for (const epic of epics) {
+        epic.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'epic' AND entity_id = ?
+        `).get(epic.id).count;
+
+        // Get dependencies (epics this epic depends on)
+        const depRows = database.prepare(`
+          SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+        `).all(epic.id);
+        epic.dependencies = depRows.map(row => row.dependency_epic_id);
+
+        // Get dependent epics (epics that depend on this epic)
+        const depEpicRows = database.prepare(`
+          SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
+        `).all(epic.id);
+        epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
+      }
+
+       const output = {
           data: convertSQLiteBooleans(epics),
           total_count: epics.length,
           filtered_count: epics.length,
@@ -1372,7 +1573,8 @@ server.registerTool(
         dependencies: z.array(z.number()), // Story IDs this story depends on
         dependent_stories: z.array(z.number()), // Story IDs that depend on this story
         created_at: z.string(),
-        updated_at: z.string()
+        updated_at: z.string(),
+        comment_count: z.number()
       })),
       total_count: z.number(),
       filtered_count: z.number(),
@@ -1479,6 +1681,13 @@ server.registerTool(
 
       // Apply limit after sorting
       const limited_stories = user_stories.slice(0, limit);
+
+      // Add comment count to each story
+      for (const story of limited_stories) {
+        story.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'user_story' AND entity_id = ?
+        `).get(story.id).count;
+      }
 
       // Calculate phase context
       const phaseContext = limited_stories.length > 0 ? {
@@ -1615,6 +1824,13 @@ server.registerTool(
       const stmt = database.prepare(query);
       const bugs = stmt.all(...params);
 
+      // Add comment count to each bug
+      for (const bug of bugs) {
+        bug.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'bug' AND entity_id = ?
+        `).get(bug.id).count;
+      }
+
       // Calculate phase context
       const phaseContext = bugs.length > 0 ? {
         current_phase: bugs[0].phase || 'Not Set',
@@ -1734,6 +1950,13 @@ server.registerTool(
 
       const stmt = database.prepare(query);
       const test_cases = stmt.all(...params);
+
+      // Add comment count to each test case
+      for (const testCase of test_cases) {
+        testCase.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'test_case' AND entity_id = ?
+        `).get(testCase.id).count;
+      }
 
       // Calculate phase context
       const phaseContext = test_cases.length > 0 ? {
@@ -1985,6 +2208,13 @@ server.registerTool(
       const stmt = database.prepare(query);
       const tasks = stmt.all(...params);
 
+      // Add comment count to each task
+      for (const task of tasks) {
+        task.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
+        `).get(task.id).count;
+      }
+
       // Calculate phase context
       const phaseContext = tasks.length > 0 ? {
         current_phase: tasks[0].phase || 'Not Set',
@@ -2163,6 +2393,29 @@ function wouldCreateCircularDependency(database: any, storyId: number, dependenc
     `).all(currentId);
 
     stack.push(...dependencies.map((d: any) => d.dependency_story_id));
+  }
+
+  return false;
+}
+
+// Helper function to check for circular epic dependencies
+function wouldCreateCircularEpicDependency(database: any, epicId: number, dependencyId: number): boolean {
+  const visited = new Set<number>();
+  const stack = [dependencyId];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    if (visited.has(currentId)) continue;
+    if (currentId === epicId) return true; // Circular dependency found
+
+    visited.add(currentId);
+
+    // Find all epics that currentId depends on
+    const dependencies = database.prepare(`
+      SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+    `).all(currentId);
+
+    stack.push(...dependencies.map((d: any) => d.dependency_epic_id));
   }
 
   return false;
