@@ -2077,55 +2077,7 @@ server.registerTool(
   }
 );
 
-// Tool: Update Task Status
-server.registerTool(
-  'update_task_status',
-  {
-    title: 'Update Task Status',
-    description: 'Update the status of an existing task',
-    inputSchema: {
-      task_id: z.number(),
-      status: z.enum(['New', 'In Progress', 'Review', 'Closed'])
-    },
-    outputSchema: {
-      success: z.boolean(),
-      task_id: z.number()
-    }
-  },
-  async ({ task_id, status }) => {
-    try {
-      const database = getDatabase();
-      const stmt = database.prepare(`
-        UPDATE tasks
-        SET status = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `);
-      const result = stmt.run(status, task_id);
 
-      if (result.changes === 0) {
-        return {
-          content: [{ type: 'text', text: 'Task not found' }],
-          isError: true
-        };
-      }
-
-      const output = {
-        success: true,
-        task_id
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
-    } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error updating task: ${error.message}` }],
-        isError: true
-      };
-    }
-  }
-);
 
 // Tool: Manage Story Dependencies
 server.registerTool(

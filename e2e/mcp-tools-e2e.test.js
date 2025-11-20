@@ -294,13 +294,7 @@ async function testEntityUpdates(db) {
   logTest('update_entity_status tool', statusResult.changes > 0,
     'Updated user story status with audit trail');
 
-  // Test update_task_status
-  const updateTaskStatus = db.prepare(`
-    UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `);
-  const taskStatusResult = updateTaskStatus.run('Review', 1);
-  logTest('update_task_status tool', taskStatusResult.changes > 0,
-    'Updated task status to Review');
+
 }
 
 async function testDependencyManagement(db) {

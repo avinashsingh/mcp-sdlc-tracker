@@ -39,7 +39,6 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 ### Task Management
 - `create_tasks`: Create multiple tasks with user story association, time estimates, and architect/developer assignment
 - `list_tasks`: List tasks with optional filtering
-- `update_task_status`: Update task status
 
 ### Bug Tracking
 - `create_bugs`: Create multiple bug reports with severity levels, reporter, and assignee information
@@ -51,7 +50,6 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Workflow Management
 - `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
-- `update_task_status`: Update task status
 - `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
 - `manage_epic_dependencies`: Add or remove dependencies for multiple epics in bulk
 

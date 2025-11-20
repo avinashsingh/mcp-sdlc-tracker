@@ -90,7 +90,7 @@ async function sendMcpRequest(server, method, params = {}, id = 1) {
 async function runMcpE2eTest() {
   console.log('🚀 Starting MCP server for JSON-RPC testing...');
 
-  const server = spawn('tsx', [serverPath], {
+  const server = spawn('npx', ['tsx', serverPath], {
     cwd: __dirname,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, NODE_ENV: 'test' }
@@ -335,23 +335,7 @@ async function runMcpE2eTest() {
     logTest('update_entity_status tool via JSON-RPC', statusSuccess,
       statusSuccess ? 'Entity status updated successfully' : `Response: ${JSON.stringify(updateStatusResponse)}`);
 
-    // Test 12: Update task status
-    console.log('\n12. Testing update_task_status tool...');
-    const updateTaskResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'update_task_status',
-      arguments: {
-        task_id: 1,
-        status: 'In Progress'
-      }
-    });
-
-    const taskStatusSuccess = updateTaskResponse.result &&
-                             updateTaskResponse.result.content &&
-                             !updateTaskResponse.error;
-    logTest('update_task_status tool via JSON-RPC', taskStatusSuccess,
-      taskStatusSuccess ? 'Task status updated successfully' : `Response: ${JSON.stringify(updateTaskResponse)}`);
-
-    // Test 13: Manage story dependencies
+    // Test 12: Manage story dependencies
     console.log('\n13. Testing manage_story_dependencies tool...');
     const depResponse = await sendMcpRequest(server, 'tools/call', {
       name: 'manage_story_dependencies',
