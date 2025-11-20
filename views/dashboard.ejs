@@ -108,15 +108,49 @@
           </button>
         </div>
 
-        <div id="loading" class="text-center py-5">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-          <p class="mt-2 text-muted">Loading SDLC data...</p>
-        </div>
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="sdlc-tab" data-bs-toggle="tab" data-bs-target="#sdlc-panel" type="button" role="tab">
+              <i class="bi bi-kanban me-2"></i>SDLC Tracker
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="wiki-tab" data-bs-toggle="tab" data-bs-target="#wiki-panel" type="button" role="tab" onclick="showWikiIndex()">
+              <i class="bi bi-book me-2"></i>Wiki
+            </button>
+          </li>
+        </ul>
 
-        <div id="content" class="d-none">
-          <!-- SDLC Hierarchy will be rendered here -->
+        <!-- Tab Content -->
+        <div class="tab-content" id="mainTabContent">
+          <!-- SDLC Tab -->
+          <div class="tab-pane fade show active" id="sdlc-panel" role="tabpanel">
+            <div id="sdlc-loading" class="text-center py-5">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2 text-muted">Loading SDLC data...</p>
+            </div>
+
+            <div id="sdlc-content" class="d-none">
+              <!-- SDLC Hierarchy will be rendered here -->
+            </div>
+          </div>
+
+          <!-- Wiki Tab -->
+          <div class="tab-pane fade" id="wiki-panel" role="tabpanel">
+            <div id="wiki-loading" class="text-center py-5">
+              <div class="spinner-border text-info" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2 text-muted">Loading wiki pages...</p>
+            </div>
+
+            <div id="wiki-content" class="d-none">
+              <!-- Wiki pages will be rendered here -->
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -126,6 +160,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.umd.js"></script>
   <script>
     let epicsData = [];
+    let wikiData = [];
     let currentRoute = '/';
 
     // Client-side routing
@@ -135,7 +170,9 @@
       '/story/:id': showStoryDetails,
       '/task/:id': showTaskDetails,
       '/bug/:id': showBugDetails,
-      '/test-case/:id': showTestCaseDetails
+      '/test-case/:id': showTestCaseDetails,
+      '/wiki': showWikiIndex,
+      '/wiki/:id': showWikiPage
     };
 
     function navigateTo(path) {
@@ -293,7 +330,7 @@
     }
 
     function renderSDLC() {
-      const content = document.getElementById('content');
+      const content = document.getElementById('sdlc-content');
       let html = '';
 
       epicsData.forEach(epic => {
@@ -364,12 +401,23 @@
     // Route handlers
     function showDashboard() {
       document.title = 'SDLC Tracker Dashboard';
+
+      // Switch to SDLC tab
+      const sdlcTab = document.getElementById('sdlc-tab');
+      const wikiTab = document.getElementById('wiki-tab');
+      if (sdlcTab && wikiTab) {
+        sdlcTab.classList.add('active');
+        wikiTab.classList.remove('active');
+        document.getElementById('sdlc-panel').classList.add('show', 'active');
+        document.getElementById('wiki-panel').classList.remove('show', 'active');
+      }
+
       renderSDLC();
     }
 
     async function showEpicDetails(epicId) {
       try {
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -387,7 +435,7 @@
         renderEntityDetail(epic, 'epic');
       } catch (error) {
         console.error('Error loading epic details:', error);
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="alert alert-danger">
             <h5>Failed to load epic details</h5>
             <p>Please try again or go back to the dashboard.</p>
@@ -399,7 +447,7 @@
 
     async function showStoryDetails(storyId) {
       try {
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -417,7 +465,7 @@
         renderEntityDetail(story, 'user_story');
       } catch (error) {
         console.error('Error loading story details:', error);
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="alert alert-danger">
             <h5>Failed to load user story details</h5>
             <p>Please try again or go back to the dashboard.</p>
@@ -429,7 +477,7 @@
 
     async function showTaskDetails(taskId) {
       try {
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -447,7 +495,7 @@
         renderEntityDetail(task, 'task');
       } catch (error) {
         console.error('Error loading task details:', error);
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="alert alert-danger">
             <h5>Failed to load task details</h5>
             <p>Please try again or go back to the dashboard.</p>
@@ -459,7 +507,7 @@
 
     async function showBugDetails(bugId) {
       try {
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -477,7 +525,7 @@
         renderEntityDetail(bug, 'bug');
       } catch (error) {
         console.error('Error loading bug details:', error);
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="alert alert-danger">
             <h5>Failed to load bug details</h5>
             <p>Please try again or go back to the dashboard.</p>
@@ -489,7 +537,7 @@
 
     async function showTestCaseDetails(testCaseId) {
       try {
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -507,7 +555,7 @@
         renderEntityDetail(testCase, 'test_case');
       } catch (error) {
         console.error('Error loading test case details:', error);
-        document.getElementById('content').innerHTML = `
+        document.getElementById('sdlc-content').innerHTML = `
           <div class="alert alert-danger">
             <h5>Failed to load test case details</h5>
             <p>Please try again or go back to the dashboard.</p>
@@ -775,7 +823,7 @@
         </div>
       `;
 
-      document.getElementById('content').innerHTML = html;
+      document.getElementById('sdlc-content').innerHTML = html;
       loadComments(entityType, entity.id);
     }
 
@@ -806,28 +854,299 @@
 
     async function loadData() {
       try {
+        // Load SDLC data
+        document.getElementById('sdlc-loading').classList.remove('d-none');
+        document.getElementById('sdlc-content').classList.add('d-none');
+
         const response = await fetch('/api/epics');
         if (!response.ok) {
-          throw new Error('Failed to load data');
+          throw new Error('Failed to load epics data');
         }
-        epicsData = await response.json();
 
-        document.getElementById('loading').classList.add('d-none');
-        document.getElementById('content').classList.remove('d-none');
+        const data = await response.json();
+        epicsData = data || [];
+
+        document.getElementById('sdlc-loading').classList.add('d-none');
+        document.getElementById('sdlc-content').classList.remove('d-none');
+
+        // Load wiki data
+        try {
+          window.wikiData = await loadWikiData();
+        } catch (wikiError) {
+          console.warn('Failed to load wiki data:', wikiError);
+          window.wikiData = [];
+        }
 
         // Check if we're on the dashboard route
         if (window.location.pathname === '/' || window.location.pathname === '/dashboard') {
           renderSDLC();
         }
       } catch (error) {
-        document.getElementById('loading').innerHTML = `
-          <div class="alert alert-danger" role="alert">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            Failed to load SDLC data. Please check if the database is initialized.
+        document.getElementById('sdlc-loading').innerHTML = `
+          <div class="alert alert-danger text-center">
+            <i class="bi bi-exclamation-triangle display-4 mb-3"></i>
+            <h5>Failed to load SDLC data</h5>
+            <p>Please check if the database is initialized.</p>
           </div>
         `;
         console.error('Error loading data:', error);
       }
+    }
+
+    // Wiki functions
+    async function loadWikiData() {
+      try {
+        const response = await fetch('/api/wiki');
+        if (!response.ok) {
+          throw new Error('Failed to load wiki data');
+        }
+        return await response.json();
+      } catch (error) {
+        console.error('Error loading wiki data:', error);
+        throw error;
+      }
+    }
+
+    function showWikiIndex() {
+      document.title = 'Wiki - SDLC Tracker';
+
+      // Switch to wiki tab
+      const wikiTab = document.getElementById('wiki-tab');
+      const sdlcTab = document.getElementById('sdlc-tab');
+      if (wikiTab && sdlcTab) {
+        wikiTab.classList.add('active');
+        sdlcTab.classList.remove('active');
+        document.getElementById('wiki-panel').classList.add('show', 'active');
+        document.getElementById('sdlc-panel').classList.remove('show', 'active');
+      }
+
+      // Use already loaded wiki data if available, otherwise load it
+      if (window.wikiData && window.wikiData.length >= 0) {
+        renderWikiIndex(window.wikiData);
+      } else {
+        loadWikiData().then(wikiPages => {
+          window.wikiData = wikiPages;
+          renderWikiIndex(wikiPages);
+        }).catch(error => {
+          document.getElementById('wiki-content').innerHTML = `
+            <div class="alert alert-danger">
+              <h5>Failed to load wiki pages</h5>
+              <p>${error.message}</p>
+            </div>
+          `;
+        });
+      }
+    }
+
+    function renderWikiIndex(wikiPages) {
+      const content = document.getElementById('wiki-content');
+
+      if (wikiPages.length === 0) {
+        content.innerHTML = `
+          <div class="text-center py-5">
+            <i class="bi bi-book display-1 text-muted mb-3"></i>
+            <h3>No Wiki Pages Yet</h3>
+            <p class="text-muted">Create your first wiki page to document processes, guides, and knowledge.</p>
+            <button class="btn btn-primary" onclick="createWikiPage()">
+              <i class="bi bi-plus-circle me-2"></i>Create First Wiki Page
+            </button>
+          </div>
+        `;
+      } else {
+        const wikiCards = wikiPages.map(page => `
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card entity-card h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <h5 class="card-title mb-0">
+                    <i class="bi bi-book me-2 text-info"></i>
+                    <a href="#" onclick="navigateTo('/wiki/${page.id}')" class="text-decoration-none">
+                      ${page.title}
+                    </a>
+                  </h5>
+                  <span class="badge bg-${page.status === 'Published' ? 'success' : 'warning'}">${page.status}</span>
+                </div>
+
+                ${page.summary ? `<p class="card-text text-muted small">${page.summary}</p>` : ''}
+
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                  <small class="text-muted">
+                    <i class="bi bi-tag me-1"></i>${page.category || 'Uncategorized'}
+                  </small>
+                  <small class="text-muted">
+                    <i class="bi bi-chat me-1"></i>${page.comment_count || 0}
+                  </small>
+                </div>
+
+                ${page.tags && page.tags.length > 0 ? `
+                  <div class="mt-2">
+                    ${page.tags.map(tag => `<span class="badge bg-light text-dark me-1">${tag}</span>`).join('')}
+                  </div>
+                ` : ''}
+
+                <div class="mt-3">
+                  <button class="btn btn-sm btn-outline-primary" onclick="navigateTo('/wiki/${page.id}')">
+                    <i class="bi bi-eye me-1"></i>View
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+        content.innerHTML = `
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="mb-0">
+              <i class="bi bi-book me-2 text-info"></i>Wiki Pages
+            </h4>
+            <button class="btn btn-primary" onclick="createWikiPage()">
+              <i class="bi bi-plus-circle me-2"></i>New Wiki Page
+            </button>
+          </div>
+
+          <div class="row">
+            ${wikiCards}
+          </div>
+        `;
+      }
+
+      // Show content, hide loading
+      document.getElementById('wiki-loading').classList.add('d-none');
+      content.classList.remove('d-none');
+    }
+
+    async function showWikiPage(pageId) {
+      try {
+        document.title = `Wiki Page - SDLC Tracker`;
+
+        // Switch to wiki tab
+        const wikiTab = document.getElementById('wiki-tab');
+        if (wikiTab) {
+          wikiTab.click();
+        }
+
+        document.getElementById('wiki-content').innerHTML = `
+          <div class="text-center py-5">
+            <div class="spinner-border text-info" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading wiki page...</p>
+          </div>
+        `;
+
+        const response = await fetch(`/api/wiki/${pageId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load wiki page');
+        }
+
+        const pageData = await response.json();
+        renderWikiPage(pageData);
+      } catch (error) {
+        console.error('Error loading wiki page:', error);
+        document.getElementById('wiki-content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load wiki page</h5>
+            <p>${error.message}</p>
+            <button class="btn btn-primary" onclick="navigateTo('/wiki')">Back to Wiki</button>
+          </div>
+        `;
+      }
+    }
+
+    function renderWikiPage(pageData) {
+      const content = document.getElementById('wiki-content');
+
+      // Render linked entities
+      const linkedEntities = pageData.linked_entities || [];
+      const entityLinks = linkedEntities.map(link => `
+        <span class="badge bg-light text-dark me-1">
+          <a href="#" onclick="navigateToEntity('${link.entity_type}', ${link.entity_id})" class="text-decoration-none">
+            ${link.entity_type} #${link.entity_id}
+          </a>
+        </span>
+      `).join('');
+
+      content.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start mb-4">
+          <div>
+            <h2 class="mb-2">
+              <i class="bi bi-book me-2 text-info"></i>${pageData.title}
+            </h2>
+            <div class="mb-3">
+              <span class="badge bg-${pageData.status === 'Published' ? 'success' : 'warning'} me-2">${pageData.status}</span>
+              <span class="badge bg-secondary me-2">${pageData.category || 'Uncategorized'}</span>
+              <small class="text-muted">
+                <i class="bi bi-chat me-1"></i>${pageData.comment_count || 0} comments
+              </small>
+            </div>
+            ${pageData.summary ? `<p class="text-muted">${pageData.summary}</p>` : ''}
+          </div>
+          <div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="navigateTo('/wiki')">
+              <i class="bi bi-arrow-left me-1"></i>Back to Wiki
+            </button>
+          </div>
+        </div>
+
+        ${pageData.tags && pageData.tags.length > 0 ? `
+          <div class="mb-4">
+            <strong>Tags:</strong>
+            ${pageData.tags.map(tag => `<span class="badge bg-light text-dark me-1">${tag}</span>`).join('')}
+          </div>
+        ` : ''}
+
+        ${linkedEntities.length > 0 ? `
+          <div class="mb-4">
+            <strong>Related Entities:</strong><br>
+            ${entityLinks}
+          </div>
+        ` : ''}
+
+        <div class="card">
+          <div class="card-body">
+            <div class="markdown-content">
+              ${marked.parse(pageData.content)}
+            </div>
+          </div>
+        </div>
+
+        ${pageData.comment_count > 0 ? `
+          <div class="mt-4">
+            <h5>Comments (${pageData.comment_count})</h5>
+            <div class="text-muted">Comments functionality coming soon...</div>
+          </div>
+        ` : ''}
+      `;
+
+      // Show content, hide loading
+      document.getElementById('wiki-loading').classList.add('d-none');
+      content.classList.remove('d-none');
+    }
+
+    function navigateToEntity(entityType, entityId) {
+      // Switch to SDLC tab first
+      const sdlcTab = document.getElementById('sdlc-tab');
+      if (sdlcTab) {
+        sdlcTab.click();
+      }
+
+      // Navigate to entity
+      const routeMap = {
+        'epic': '/epic/',
+        'user_story': '/story/',
+        'task': '/task/',
+        'bug': '/bug/',
+        'test_case': '/test-case/'
+      };
+
+      if (routeMap[entityType]) {
+        navigateTo(routeMap[entityType] + entityId);
+      }
+    }
+
+    function createWikiPage() {
+      // For now, show a message. In a full implementation, this would open a modal or form
+      alert('Wiki page creation is available through MCP tools. Use the create_wiki_page tool to create new wiki pages.');
     }
 
     // Load data when page loads and handle routing

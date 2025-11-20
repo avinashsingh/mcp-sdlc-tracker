@@ -301,6 +301,38 @@ app.get('/open-browser', async (req, res) => {
   }
 });
 
+// Dashboard data API endpoint
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const database = getDatabase();
+
+    // Get all non-archived epics with their associated data
+    const epics = database.prepare(`
+      SELECT
+        e.*,
+        COUNT(DISTINCT us.id) as story_count,
+        COUNT(DISTINCT t.id) as task_count,
+        COUNT(DISTINCT b.id) as bug_count,
+        COUNT(DISTINCT tc.id) as test_case_count,
+        COUNT(DISTINCT c.id) as comment_count
+      FROM epics e
+      LEFT JOIN user_stories us ON e.id = us.epic_id AND us.archived = 0
+      LEFT JOIN tasks t ON us.id = t.user_story_id
+      LEFT JOIN bugs b ON us.id = b.user_story_id
+      LEFT JOIN test_cases tc ON us.id = tc.user_story_id
+      LEFT JOIN comments c ON e.id = c.entity_id AND c.entity_type = 'epic'
+      WHERE e.archived = 0
+      GROUP BY e.id
+      ORDER BY e.created_at DESC
+    `).all();
+
+    res.json({ epics });
+  } catch (error) {
+    console.error('Error loading dashboard data:', error);
+    res.status(500).json({ error: 'Failed to load dashboard data' });
+  }
+});
+
 // Get comments for an entity
 app.get('/api/comments/:entityType/:entityId', async (req, res) => {
   try {

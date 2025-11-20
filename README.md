@@ -6,14 +6,15 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
+- **Wiki System**: Integrated wiki for project documentation with entity linking
 - **Comments System**: Stakeholder feedback and collaboration on all entities with comment counts
 - **Epic Dependencies**: Epics can depend on other epics (similar to user story dependencies)
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
 - **Audit Trail**: Ownership and status transition tracking
 - **Data Validation**: Comprehensive input validation and foreign key constraint checking
 - **Boolean Field Handling**: Proper boolean conversion for archived fields (true/false instead of 0/1)
-- **HTTP API**: REST endpoints for database initialization and status checking
-- **Web UI**: Dashboard interface with dependency visualization
+- **HTTP API**: REST endpoints for database initialization, SDLC entities, and wiki pages
+- **Web UI**: Tabbed dashboard interface with SDLC tracker and wiki sections
 - **Error Handling**: Clear error messages for invalid operations and constraint violations
 - **SQLite Backend**: Uses SQLite with better-sqlite3 for efficient operations
 
@@ -56,6 +57,13 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
+
+### Wiki Management
+- `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification
+- `update_wiki_page`: Update wiki page content, metadata, and tags
+- `list_wiki_pages`: List wiki pages with filtering by category, tags, or search terms
+- `get_wiki_page`: Get detailed wiki page content with linked entities
+- `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
 
 ## Error Handling & Validation
 
@@ -109,6 +117,9 @@ The server also provides a REST API for web applications and direct HTTP access:
 - `GET /api/bug/:id`: Get specific bug details
 - `GET /api/test-case/:id`: Get specific test case details
 - `GET /api/comments/:entityType/:entityId`: Get comments for any entity
+- `GET /api/wiki`: List all wiki pages with metadata and tags
+- `GET /api/wiki/:id`: Get specific wiki page with full content and linked entities
+- `GET /api/wiki/search?q=term`: Search wiki pages by title or content
 
 ### Features
 - **Comment Counts**: All entities include `comment_count` field
@@ -212,10 +223,13 @@ npm start
 ```
 
 **Web UI Features:**
+- **Tabbed Interface**: Separate SDLC Tracker and Wiki sections
 - **Dashboard Overview**: Visual representation of all SDLC entities
+- **Wiki Browsing**: Card-based wiki page display with metadata and tags
 - **Dependency Visualization**: Clickable dependency links for epics and user stories
 - **Comment Counts**: Display of comment counts on all entities
 - **Interactive Navigation**: Click entities to view detailed information
+- **Wiki Page Rendering**: Full Markdown support with linked SDLC entities
 - **Real-time Updates**: Automatic refresh of data changes
 
 #### Other MCP-Compatible Clients
@@ -325,6 +339,23 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `comment_text`: Comment content (required)
 - `author`: Comment author stakeholder (enum)
 - `created_at/updated_at`: Timestamps
+
+#### Wiki Pages Table
+- `id`: Primary key (auto-increment)
+- `title`: Wiki page title (required, unique)
+- `content`: Markdown content (required)
+- `category`: Category classification ('technical', 'process', 'requirements', 'architecture', 'other')
+- `tags`: Array of tag strings for organization
+- `created_by/updated_by`: Stakeholder who created/updated the page
+- `created_at/updated_at`: Timestamps
+
+#### Wiki Links Table
+- `id`: Primary key (auto-increment)
+- `wiki_page_id`: Foreign key to wiki_pages
+- `entity_type`: Linked entity type ('epic', 'user_story', 'task', 'bug', 'test_case')
+- `entity_id`: Foreign key to the linked entity
+- `created_at`: Timestamp when link was created
+- `created_by`: Stakeholder who created the link
 
 ### Audit Trail Tables
 
@@ -449,6 +480,14 @@ Once connected to an MCP client, you can:
 11. "Add comment on user story 1: 'Need to ensure security best practices' by architect"
 12. "Add comment on bug 1: 'Validation should check email format' by developer"
 
+### Wiki Documentation
+13. "Create wiki page: 'API Authentication Guide' with content about OAuth2 flow, category 'technical', tags ['authentication', 'security', 'api']"
+14. "Create wiki page: 'Deployment Process' with step-by-step deployment instructions, category 'process', tags ['deployment', 'ci-cd']"
+15. "List all wiki pages in technical category"
+16. "Update wiki page content for 'API Authentication Guide' with additional OAuth2 details"
+17. "Link wiki page 'API Authentication Guide' to user story 1 and task 2"
+18. "Search wiki pages for 'authentication'"
+
 ### Workflow Management
 13. "Update user story 1 status to 'In Progress' transitioned by architect"
 14. "Update task 1 status to 'Closed' transitioned by developer"
@@ -486,6 +525,9 @@ The server is written in TypeScript and uses:
 
 ### Recent Improvements
 
+- **Wiki System**: Complete wiki functionality with Markdown pages, tags, categories, and SDLC entity linking
+- **Tabbed Web UI**: Enhanced dashboard with separate SDLC Tracker and Wiki sections
+- **Wiki API**: Full REST API for wiki page management and search
 - **Comment Count Display**: All entities now show comment counts in APIs and MCP tools
 - **Boolean Field Conversion**: Proper boolean handling for archived fields (true/false)
 - **Epic Dependencies**: Full dependency support for epics (similar to user stories)
