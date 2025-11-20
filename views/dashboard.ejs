@@ -1079,24 +1079,6 @@
       });
     }
 
-      // Use already loaded wiki data if available, otherwise load it
-      if (window.wikiData && window.wikiData.length >= 0) {
-        renderWikiIndex(window.wikiData);
-      } else {
-        loadWikiData().then(wikiPages => {
-          window.wikiData = wikiPages;
-          renderWikiIndex(wikiPages);
-        }).catch(error => {
-          document.getElementById('wiki-content').innerHTML = `
-            <div class="alert alert-danger">
-              <h5>Failed to load wiki pages</h5>
-              <p>${error.message}</p>
-            </div>
-          `;
-        });
-      }
-    }
-
     function renderWikiIndex(wikiPages) {
       const content = document.getElementById('wiki-content');
 
