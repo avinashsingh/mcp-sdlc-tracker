@@ -215,13 +215,16 @@ export function registerListWikiPages(server: any) {
     'list_wiki_pages',
     {
       title: 'List Wiki Pages',
-      description: 'List wiki pages with optional filtering by category, status, tags, or linked entities',
+      description: 'List wiki pages with optional filtering by category, status, tags, linked entities, or fuzzy search',
       inputSchema: {
         status: z.enum(['Draft', 'Published', 'Archived']).optional(),
         category: z.enum(['technical', 'process', 'business', 'qa', 'knowledge']).optional(),
         tags: z.array(z.string()).optional(),
         linked_entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']).optional(),
         linked_entity_id: z.number().optional(),
+        search_query: z.string().optional(),
+        fuzzy_threshold: z.number().min(0).max(1).default(0.3),
+        search_fields: z.array(z.enum(['title', 'content', 'summary'])).default(['title', 'content']),
         limit: z.number().default(50)
       },
       outputSchema: {
@@ -239,65 +242,123 @@ export function registerListWikiPages(server: any) {
           assigned_to: z.string().nullable(),
           created_at: z.string(),
           updated_at: z.string(),
-          comment_count: z.number()
+          comment_count: z.number(),
+          search_score: z.number().optional(),
+          title_highlight: z.string().optional(),
+          content_highlight: z.string().optional()
         })),
         total_count: z.number(),
-        filtered_count: z.number()
+        filtered_count: z.number(),
+        search_performed: z.boolean()
       }
     },
-    async ({ status, category, tags, linked_entity_type, linked_entity_id, limit = 50 }) => {
+    async ({ status, category, tags, linked_entity_type, linked_entity_id, search_query, fuzzy_threshold = 0.3, search_fields = ['title', 'content'], limit = 50 }) => {
       try {
         const database = getDatabaseSafe();
 
-        let query = `
-          SELECT wp.*,
-                 COUNT(c.id) as comment_count
-          FROM wiki_pages wp
-          LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
-        `;
+        let searchPerformed = false;
+        let query: string;
+        let params: any[] = [];
 
-        const conditions: string[] = [];
-        const params: any[] = [];
+        if (search_query && search_query.trim()) {
+          // Full-text search query with FTS
+          searchPerformed = true;
+          const searchFields = search_fields.map(field => `${field}:*`).join(' OR ');
+          const ftsQuery = `${searchFields}:"${search_query}"*`;
 
-        if (status) {
-          conditions.push('wp.status = ?');
-          params.push(status);
-        }
-
-        if (category) {
-          conditions.push('wp.category = ?');
-          params.push(category);
-        }
-
-        if (tags && tags.length > 0) {
-          const tagConditions = tags.map(() => 'wp.tags LIKE ?').join(' OR ');
-          conditions.push(`(${tagConditions})`);
-          tags.forEach((tag: string) => params.push(`%${tag}%`));
-        }
-
-        if (linked_entity_type && linked_entity_id) {
-          query += `
-            INNER JOIN wiki_page_links wpl ON wp.id = wpl.wiki_page_id
+          query = `
+            SELECT wp.*,
+                   COUNT(c.id) as comment_count,
+                   bm25(wiki_pages_fts) as search_score,
+                   highlight(wiki_pages_fts, 0, '<mark>', '</mark>') as title_highlight,
+                   highlight(wiki_pages_fts, 1, '<mark>', '</mark>') as content_highlight
+            FROM wiki_pages wp
+            JOIN wiki_pages_fts wpf ON wp.id = wpf.rowid
+            LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
+            WHERE wiki_pages_fts MATCH ?
+              AND bm25(wiki_pages_fts) <= ?
           `;
-          conditions.push('wpl.entity_type = ? AND wpl.entity_id = ?');
-          params.push(linked_entity_type, linked_entity_id);
+
+          params.push(ftsQuery, fuzzy_threshold);
+
+          // Add metadata filters
+          const conditions: string[] = [];
+          if (status) {
+            conditions.push('wp.status = ?');
+            params.push(status);
+          }
+          if (category) {
+            conditions.push('wp.category = ?');
+            params.push(category);
+          }
+          if (tags && tags.length > 0) {
+            const tagConditions = tags.map(() => 'wp.tags LIKE ?').join(' OR ');
+            conditions.push(`(${tagConditions})`);
+            tags.forEach((tag: string) => params.push(`%${tag}%`));
+          }
+          if (linked_entity_type && linked_entity_id) {
+            query += ` INNER JOIN wiki_page_links wpl ON wp.id = wpl.wiki_page_id`;
+            conditions.push('wpl.entity_type = ? AND wpl.entity_id = ?');
+            params.push(linked_entity_type, linked_entity_id);
+          }
+
+          if (conditions.length > 0) {
+            query += ` AND ${conditions.join(' AND ')}`;
+          }
+
+          query += `
+            GROUP BY wp.id
+            ORDER BY search_score ASC, wp.updated_at DESC
+            LIMIT ?
+          `;
+        } else {
+          // Regular listing query (no search)
+          query = `
+            SELECT wp.*,
+                   COUNT(c.id) as comment_count
+            FROM wiki_pages wp
+            LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
+          `;
+
+          const conditions: string[] = [];
+          if (status) {
+            conditions.push('wp.status = ?');
+            params.push(status);
+          }
+          if (category) {
+            conditions.push('wp.category = ?');
+            params.push(category);
+          }
+          if (tags && tags.length > 0) {
+            const tagConditions = tags.map(() => 'wp.tags LIKE ?').join(' OR ');
+            conditions.push(`(${tagConditions})`);
+            tags.forEach((tag: string) => params.push(`%${tag}%`));
+          }
+          if (linked_entity_type && linked_entity_id) {
+            query += `
+              INNER JOIN wiki_page_links wpl ON wp.id = wpl.wiki_page_id
+            `;
+            conditions.push('wpl.entity_type = ? AND wpl.entity_id = ?');
+            params.push(linked_entity_type, linked_entity_id);
+          }
+
+          if (conditions.length > 0) {
+            query += ` WHERE ${conditions.join(' AND ')}`;
+          }
+
+          query += `
+            GROUP BY wp.id
+            ORDER BY wp.updated_at DESC
+            LIMIT ?
+          `;
         }
 
-        if (conditions.length > 0) {
-          query += ` WHERE ${conditions.join(' AND ')}`;
-        }
-
-        query += `
-          GROUP BY wp.id
-          ORDER BY wp.updated_at DESC
-          LIMIT ?
-        `;
         params.push(limit);
 
         const stmt = database.prepare(query);
         const pages = stmt.all(...params);
 
-        // Parse tags JSON
+        // Parse tags JSON and handle search highlights
         pages.forEach(page => {
           if (page.tags) {
             try {
@@ -308,12 +369,18 @@ export function registerListWikiPages(server: any) {
           } else {
             page.tags = [];
           }
+
+          // Convert search score for better readability (lower is better for BM25)
+          if (page.search_score !== undefined) {
+            page.search_score = Math.max(0, Math.min(1, 1 - (page.search_score / 10)));
+          }
         });
 
         const output = {
           data: pages,
           total_count: pages.length,
-          filtered_count: pages.length
+          filtered_count: pages.length,
+          search_performed: searchPerformed
         };
 
         return {

@@ -415,6 +415,107 @@ app.get('/api/history/:entityType/:entityId', async (req, res) => {
   }
 });
 
+// Search wiki pages
+app.get('/api/search/wiki', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { q: query, fuzzy_threshold = 0.3, fields = 'title,content', category, status, tags, limit = 20 } = req.query;
+    const database = getDatabase();
+
+    if (!query || !query.trim()) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const searchFields = (fields as string).split(',').filter(f => ['title', 'content', 'summary'].includes(f));
+    if (searchFields.length === 0) {
+      return res.status(400).json({ error: 'At least one valid search field must be specified' });
+    }
+
+    const searchFieldsQuery = searchFields.map(field => `${field}:*`).join(' OR ');
+    const ftsQuery = `${searchFieldsQuery}:"${query}"*`;
+
+    let sqlQuery = `
+      SELECT wp.*,
+             COUNT(c.id) as comment_count,
+             bm25(wiki_pages_fts) as search_score,
+             highlight(wiki_pages_fts, 0, '<mark>', '</mark>') as title_highlight,
+             highlight(wiki_pages_fts, 1, '<mark>', '</mark>') as content_highlight,
+             highlight(wiki_pages_fts, 2, '<mark>', '</mark>') as summary_highlight
+      FROM wiki_pages wp
+      JOIN wiki_pages_fts wpf ON wp.id = wpf.rowid
+      LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
+      WHERE wiki_pages_fts MATCH ?
+        AND bm25(wiki_pages_fts) <= ?
+    `;
+
+    const params: any[] = [ftsQuery, parseFloat(fuzzy_threshold as string)];
+
+    // Add filters
+    const conditions: string[] = [];
+    if (status) {
+      conditions.push('wp.status = ?');
+      params.push(status);
+    }
+    if (category) {
+      conditions.push('wp.category = ?');
+      params.push(category);
+    }
+    if (tags) {
+      const tagList = (tags as string).split(',');
+      const tagConditions = tagList.map(() => 'wp.tags LIKE ?').join(' OR ');
+      conditions.push(`(${tagConditions})`);
+      tagList.forEach(tag => params.push(`%${tag.trim()}%`));
+    }
+
+    if (conditions.length > 0) {
+      sqlQuery += ` AND ${conditions.join(' AND ')}`;
+    }
+
+    sqlQuery += `
+      GROUP BY wp.id
+      ORDER BY search_score ASC, wp.updated_at DESC
+      LIMIT ?
+    `;
+    params.push(parseInt(limit as string));
+
+    const stmt = database.prepare(sqlQuery);
+    const pages = stmt.all(...params);
+
+    // Parse tags and format results
+    const results = pages.map(page => {
+      if (page.tags) {
+        try {
+          page.tags = JSON.parse(page.tags);
+        } catch {
+          page.tags = [];
+        }
+      } else {
+        page.tags = [];
+      }
+
+      // Convert BM25 score to relevance percentage (lower BM25 = higher relevance)
+      if (page.search_score !== null) {
+        page.relevance = Math.max(0, Math.min(100, Math.round((1 - page.search_score / 10) * 100)));
+      }
+
+      return page;
+    });
+
+    res.json({
+      query: query,
+      results: results,
+      total_results: results.length,
+      search_performed: true
+    });
+  } catch (error) {
+    console.error('Error searching wiki:', error);
+    res.status(500).json({ error: 'Failed to search wiki' });
+  }
+});
+
 // Get epic details
 // Wiki API Endpoints
 app.get('/api/wiki', async (req, res) => {

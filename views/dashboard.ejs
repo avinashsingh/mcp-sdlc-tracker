@@ -147,6 +147,66 @@
               <p class="mt-2 text-muted">Loading wiki pages...</p>
             </div>
 
+            <!-- Wiki Search -->
+            <div id="wiki-search-section" class="mb-4 d-none">
+              <div class="card">
+                <div class="card-body">
+                  <div class="input-group mb-3">
+                    <input type="text" id="wiki-search-input" class="form-control"
+                           placeholder="Search wiki pages (supports fuzzy matching)">
+                    <button class="btn btn-outline-primary" onclick="performWikiSearch()">
+                      <i class="bi bi-search"></i> Search
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearWikiSearch()">
+                      <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                  </div>
+                  <div class="row">
+                    <div class="col-md-3">
+                      <label class="form-label small">Search Fields</label>
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="search-title" checked>
+                        <label class="form-check-label small">Title</label>
+                      </div>
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="search-content" checked>
+                        <label class="form-check-label small">Content</label>
+                      </div>
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="search-summary">
+                        <label class="form-check-label small">Summary</label>
+                      </div>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Fuzzy Threshold</label>
+                      <input type="range" class="form-range" id="fuzzy-threshold" min="0" max="1" step="0.1" value="0.3">
+                      <small class="text-muted" id="threshold-value">0.3</small>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Category</label>
+                      <select class="form-select form-select-sm" id="search-category">
+                        <option value="">All Categories</option>
+                        <option value="technical">Technical</option>
+                        <option value="process">Process</option>
+                        <option value="business">Business</option>
+                        <option value="qa">QA</option>
+                        <option value="knowledge">Knowledge</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label small">Status</label>
+                      <select class="form-select form-select-sm" id="search-status">
+                        <option value="">All Status</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Published">Published</option>
+                        <option value="Archived">Archived</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div id="wiki-content" class="d-none">
               <!-- Wiki pages will be rendered here -->
             </div>
@@ -1003,6 +1063,22 @@
         document.getElementById('sdlc-panel').classList.remove('show', 'active');
       }
 
+      // Show search section
+      document.getElementById('wiki-search-section').classList.remove('d-none');
+
+      // Load and render wiki pages
+      loadWikiData().then(wikiPages => {
+        renderWikiIndex(wikiPages);
+      }).catch(error => {
+        document.getElementById('wiki-content').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Failed to load wiki pages</h5>
+            <p>${error.message}</p>
+          </div>
+        `;
+      });
+    }
+
       // Use already loaded wiki data if available, otherwise load it
       if (window.wikiData && window.wikiData.length >= 0) {
         renderWikiIndex(window.wikiData);
@@ -1231,6 +1307,175 @@
       // For now, show a message. In a full implementation, this would open a modal or form
       alert('Wiki page creation is available through MCP tools. Use the create_wiki_page tool to create new wiki pages.');
     }
+
+    // Wiki search functionality
+    function performWikiSearch() {
+      const query = document.getElementById('wiki-search-input').value.trim();
+      if (!query) {
+        clearWikiSearch();
+        return;
+      }
+
+      const searchFields = [];
+      if (document.getElementById('search-title').checked) searchFields.push('title');
+      if (document.getElementById('search-content').checked) searchFields.push('content');
+      if (document.getElementById('search-summary').checked) searchFields.push('summary');
+
+      if (searchFields.length === 0) {
+        alert('Please select at least one field to search in.');
+        return;
+      }
+
+      const fuzzyThreshold = document.getElementById('fuzzy-threshold').value;
+      const category = document.getElementById('search-category').value;
+      const status = document.getElementById('search-status').value;
+
+      // Show loading
+      document.getElementById('wiki-content').innerHTML = `
+        <div class="text-center py-5">
+          <div class="spinner-border text-info" role="status">
+            <span class="visually-hidden">Searching...</span>
+          </div>
+          <p class="mt-2 text-muted">Searching wiki pages...</p>
+        </div>
+      `;
+      document.getElementById('wiki-content').classList.remove('d-none');
+
+      // Build search URL
+      const params = new URLSearchParams({
+        q: query,
+        fields: searchFields.join(','),
+        fuzzy_threshold: fuzzyThreshold,
+        limit: '20'
+      });
+
+      if (category) params.append('category', category);
+      if (status) params.append('status', status);
+
+      fetch(`/api/search/wiki?${params}`)
+        .then(response => response.json())
+        .then(data => {
+          displayWikiSearchResults(data);
+        })
+        .catch(error => {
+          console.error('Search error:', error);
+          document.getElementById('wiki-content').innerHTML = `
+            <div class="alert alert-danger">
+              <h5>Search failed</h5>
+              <p>${error.message}</p>
+            </div>
+          `;
+        });
+    }
+
+    function displayWikiSearchResults(data) {
+      const content = document.getElementById('wiki-content');
+
+      if (!data.results || data.results.length === 0) {
+        content.innerHTML = `
+          <div class="text-center py-5">
+            <i class="bi bi-search display-1 text-muted mb-3"></i>
+            <h3>No results found</h3>
+            <p class="text-muted">Try adjusting your search terms or fuzzy threshold.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const resultsHtml = data.results.map(page => {
+        const titleHtml = page.title_highlight || page.title;
+        const contentPreview = page.content_highlight ?
+          page.content_highlight.substring(0, 200) + (page.content_highlight.length > 200 ? '...' : '') :
+          (page.content || '').substring(0, 200) + ((page.content || '').length > 200 ? '...' : '');
+
+        const relevancePercent = page.relevance || 0;
+
+        return `
+          <div class="card search-result-card mb-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title mb-0">
+                  <a href="#" onclick="navigateTo('/wiki/${page.id}')" class="text-decoration-none">
+                    ${titleHtml}
+                  </a>
+                </h5>
+                <div class="text-end">
+                  <span class="badge bg-${page.status === 'Published' ? 'success' : page.status === 'Draft' ? 'warning' : 'secondary'}">${page.status}</span>
+                  <div class="small text-muted mt-1">
+                    Relevance: ${relevancePercent}%
+                  </div>
+                </div>
+              </div>
+
+              ${page.summary ? `<p class="card-text text-muted small">${page.summary_highlight || page.summary}</p>` : ''}
+
+              ${contentPreview ? `<div class="content-preview mb-2">${contentPreview}</div>` : ''}
+
+              <div class="d-flex justify-content-between align-items-center">
+                <div class="small text-muted">
+                  ${page.category ? `<span class="badge bg-light text-dark me-1">${page.category}</span>` : ''}
+                  ${page.tags && page.tags.length > 0 ? page.tags.map(tag => `<span class="badge bg-light text-dark me-1">${tag}</span>`).join('') : ''}
+                </div>
+                <small class="text-muted">
+                  <i class="bi bi-chat me-1"></i>${page.comment_count || 0}
+                </small>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      content.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-4">
+          <h4 class="mb-0">
+            <i class="bi bi-search me-2"></i>
+            Search Results for "${data.query}"
+          </h4>
+          <span class="badge bg-info">${data.total_results} results</span>
+        </div>
+        ${resultsHtml}
+      `;
+    }
+
+    function clearWikiSearch() {
+      document.getElementById('wiki-search-input').value = '';
+      // Reset to show all wiki pages
+      showWikiIndex();
+    }
+
+    // Update threshold display and add keyboard support
+    document.addEventListener('DOMContentLoaded', () => {
+      const thresholdSlider = document.getElementById('fuzzy-threshold');
+      const thresholdValue = document.getElementById('threshold-value');
+      const searchInput = document.getElementById('wiki-search-input');
+
+      if (thresholdSlider && thresholdValue) {
+        thresholdSlider.addEventListener('input', (e) => {
+          thresholdValue.textContent = e.target.value;
+        });
+      }
+
+      // Keyboard support for search
+      if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') {
+            performWikiSearch();
+          }
+        });
+      }
+
+      // Show search section when wiki tab is active
+      const wikiTab = document.getElementById('wiki-tab');
+      if (wikiTab) {
+        wikiTab.addEventListener('shown.bs.tab', () => {
+          document.getElementById('wiki-search-section').classList.remove('d-none');
+          // Focus search input
+          setTimeout(() => {
+            if (searchInput) searchInput.focus();
+          }, 100);
+        });
+      }
+    });
 
     // Load data when page loads and handle routing
     document.addEventListener('DOMContentLoaded', () => {

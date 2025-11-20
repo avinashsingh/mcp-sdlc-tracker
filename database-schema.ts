@@ -289,6 +289,39 @@ export function createDatabaseSchema(database: Database): void {
     CREATE INDEX IF NOT EXISTS idx_wiki_pages_status ON wiki_pages(status);
     CREATE INDEX IF NOT EXISTS idx_wiki_page_links_entity ON wiki_page_links(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_wiki_page_revisions_page ON wiki_page_revisions(page_id, version);
+
+    -- Full-text search for wiki pages
+    CREATE VIRTUAL TABLE IF NOT EXISTS wiki_pages_fts USING fts5(
+      title, content, summary,
+      content=wiki_pages,
+      content_rowid=id,
+      tokenize='porter'
+    );
+
+    -- Populate FTS table with existing data (only if empty)
+    INSERT OR IGNORE INTO wiki_pages_fts(rowid, title, content, summary)
+    SELECT id, title, content, summary FROM wiki_pages;
+
+    -- Triggers to keep FTS table in sync
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_insert AFTER INSERT ON wiki_pages
+    BEGIN
+      INSERT INTO wiki_pages_fts(rowid, title, content, summary)
+      VALUES (new.id, new.title, new.content, new.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_delete AFTER DELETE ON wiki_pages
+    BEGIN
+      DELETE FROM wiki_pages_fts WHERE rowid = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_update AFTER UPDATE ON wiki_pages
+    BEGIN
+      UPDATE wiki_pages_fts SET
+        title = new.title,
+        content = new.content,
+        summary = new.summary
+      WHERE rowid = new.id;
+    END;
   `);
 }
 
