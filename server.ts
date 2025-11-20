@@ -422,7 +422,7 @@ app.get('/api/search/wiki', async (req, res) => {
       return res.status(503).json({ error: 'Database not initialized' });
     }
 
-    const { q: query, fuzzy_threshold = 0.3, fields = 'title,content', category, status, tags, limit = 20 } = req.query;
+    const { q: query, fields = 'title,content', category, status, tags, limit = 20 } = req.query;
     const database = getDatabase();
 
     if (!query || !query.trim()) {
@@ -434,24 +434,22 @@ app.get('/api/search/wiki', async (req, res) => {
       return res.status(400).json({ error: 'At least one valid search field must be specified' });
     }
 
-    const searchFieldsQuery = searchFields.map(field => `${field}:*`).join(' OR ');
-    const ftsQuery = `${searchFieldsQuery}:"${query}"*`;
+    const ftsQuery = `"${query}"*`;
 
     let sqlQuery = `
       SELECT wp.*,
              COUNT(c.id) as comment_count,
-             bm25(wiki_pages_fts) as search_score,
-             highlight(wiki_pages_fts, 0, '<mark>', '</mark>') as title_highlight,
-             highlight(wiki_pages_fts, 1, '<mark>', '</mark>') as content_highlight,
-             highlight(wiki_pages_fts, 2, '<mark>', '</mark>') as summary_highlight
+             1.0 as search_score,
+             '' as title_highlight,
+             '' as content_highlight,
+             '' as summary_highlight
       FROM wiki_pages wp
       JOIN wiki_pages_fts wpf ON wp.id = wpf.rowid
       LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
       WHERE wiki_pages_fts MATCH ?
-        AND bm25(wiki_pages_fts) <= ?
     `;
 
-    const params: any[] = [ftsQuery, parseFloat(fuzzy_threshold as string)];
+    const params: any[] = [ftsQuery];
 
     // Add filters
     const conditions: string[] = [];
