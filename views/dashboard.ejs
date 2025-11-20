@@ -821,10 +821,33 @@
             </div>
           </div>
         </div>
+
+        <div class="card mt-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+              <i class="bi bi-clock-history me-2"></i>
+              History
+            </h5>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadHistory('${entityType}', ${entity.id})">
+              <i class="bi bi-arrow-clockwise me-1"></i>
+              Refresh
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="history-content">
+              <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Loading history...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       `;
 
       document.getElementById('sdlc-content').innerHTML = html;
       loadComments(entityType, entity.id);
+      loadHistory(entityType, entity.id);
     }
 
     async function loadComments(entityType, entityId) {
@@ -849,6 +872,66 @@
         console.error('Error loading comments:', error);
         document.getElementById('comments-content').innerHTML =
           '<div class="alert alert-warning">Failed to load comments.</div>';
+      }
+    }
+
+    async function loadHistory(entityType, entityId) {
+      try {
+        const response = await fetch(`/api/history/${entityType}/${entityId}`);
+        const history = await response.json();
+
+        const historyHtml = history.length === 0
+          ? '<p class="text-muted mb-0">No history available.</p>'
+          : history.map(entry => {
+              const actionIcon = getActionIcon(entry.action_type);
+              const actionText = getActionText(entry);
+
+              return `
+                <div class="history-item mb-3 p-3 bg-light rounded">
+                  <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="d-flex align-items-center">
+                      <i class="bi ${actionIcon} me-2 text-info"></i>
+                      <strong class="text-primary">${entry.user}</strong>
+                      <span class="text-muted ms-2">${actionText}</span>
+                    </div>
+                    <small class="text-muted">${formatDate(entry.timestamp)}</small>
+                  </div>
+                  ${entry.old_value && entry.new_value ?
+                    `<div class="small text-muted">
+                      <span class="text-decoration-line-through">${entry.old_value}</span> →
+                      <span class="fw-bold">${entry.new_value}</span>
+                    </div>` : ''}
+                </div>
+              `;
+            }).join('');
+
+        document.getElementById('history-content').innerHTML = historyHtml;
+      } catch (error) {
+        console.error('Error loading history:', error);
+        document.getElementById('history-content').innerHTML =
+          '<div class="alert alert-warning">Failed to load history.</div>';
+      }
+    }
+
+    function getActionIcon(actionType) {
+      const iconMap = {
+        'status_change': 'bi-arrow-repeat',
+        'assignment_change': 'bi-person-fill',
+        'field_change': 'bi-pencil-square'
+      };
+      return iconMap[actionType] || 'bi-circle';
+    }
+
+    function getActionText(entry) {
+      switch (entry.action_type) {
+        case 'status_change':
+          return `changed status to ${entry.new_value}`;
+        case 'assignment_change':
+          return `assigned to ${entry.new_value}`;
+        case 'field_change':
+          return `updated ${entry.field_name}`;
+        default:
+          return 'performed an action';
       }
     }
 

@@ -359,6 +359,62 @@ app.get('/api/comments/:entityType/:entityId', async (req, res) => {
   }
 });
 
+// Get entity transition history
+app.get('/api/history/:entityType/:entityId', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { entityType, entityId } = req.params;
+    const database = getDatabase();
+
+    // Query all transition types for this entity
+    const statusTransitions = database.prepare(`
+      SELECT 'status_change' as action_type,
+             from_status as old_value,
+             to_status as new_value,
+             transitioned_by as user,
+             transitioned_at as timestamp
+      FROM status_transitions
+      WHERE entity_type = ? AND entity_id = ?
+      ORDER BY transitioned_at DESC
+    `).all(entityType, parseInt(entityId));
+
+    const ownershipTransitions = database.prepare(`
+      SELECT 'assignment_change' as action_type,
+             from_owner as old_value,
+             to_owner as new_value,
+             transitioned_by as user,
+             transitioned_at as timestamp
+      FROM ownership_transitions
+      WHERE entity_type = ? AND entity_id = ?
+      ORDER BY transitioned_at DESC
+    `).all(entityType, parseInt(entityId));
+
+    const fieldChanges = database.prepare(`
+      SELECT 'field_change' as action_type,
+             field_name,
+             old_value,
+             new_value,
+             changed_by as user,
+             changed_at as timestamp
+      FROM entity_changes
+      WHERE entity_type = ? AND entity_id = ?
+      ORDER BY changed_at DESC
+    `).all(entityType, parseInt(entityId));
+
+    // Combine and sort all transitions
+    const allTransitions = [...statusTransitions, ...ownershipTransitions, ...fieldChanges]
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.json(allTransitions);
+  } catch (error) {
+    console.error('Error loading history:', error);
+    res.status(500).json({ error: 'Failed to load history' });
+  }
+});
+
 // Get epic details
 // Wiki API Endpoints
 app.get('/api/wiki', async (req, res) => {
