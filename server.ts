@@ -1514,8 +1514,85 @@ server.registerTool(
         isError: true
       };
     }
+   }
+ );
+
+// Tool: Get Comments
+server.registerTool(
+  'get_comments',
+  {
+    title: 'Get Comments',
+    description: 'Get comments for a specific SDLC entity',
+    inputSchema: {
+      entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
+      entity_id: z.number(),
+      limit: z.number().default(50)
+    },
+    outputSchema: {
+      comments: z.array(z.object({
+        id: z.number(),
+        entity_type: z.string(),
+        entity_id: z.number(),
+        comment_text: z.string(),
+        author: z.string(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
+      total_count: z.number()
+    }
+  },
+  async ({ entity_type, entity_id, limit = 50 }) => {
+    try {
+      const database = getDatabase();
+
+      // Validate entity exists
+      const entityTable = {
+        epic: 'epics',
+        user_story: 'user_stories',
+        task: 'tasks',
+        bug: 'bugs',
+        test_case: 'test_cases'
+      }[entity_type];
+
+      const entity = database.prepare(`SELECT id FROM ${entityTable} WHERE id = ?`).get(entity_id);
+      if (!entity) {
+        return {
+          content: [{ type: 'text', text: `Invalid ${entity_type} ID: ${entity_id}` }],
+          isError: true
+        };
+      }
+
+      // Get comments
+      const comments = database.prepare(`
+        SELECT id, entity_type, entity_id, comment_text, author, created_at, updated_at
+        FROM comments
+        WHERE entity_type = ? AND entity_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).all(entity_type, entity_id, limit);
+
+      // Get total count
+      const totalCount = database.prepare(`
+        SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?
+      `).get(entity_type, entity_id).count;
+
+      const output = {
+        comments,
+        total_count: totalCount
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error getting comments: ${error.message}` }],
+        isError: true
+      };
+    }
   }
-);
+ );
 
 // Tool: List Epics
 server.registerTool(
