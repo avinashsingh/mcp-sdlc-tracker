@@ -136,6 +136,20 @@ export function createDatabaseSchema(database: Database): void {
       UNIQUE(dependent_epic_id, dependency_epic_id)
     );
 
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dependent_task_id INTEGER NOT NULL,
+      dependency_task_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+      FOREIGN KEY (dependent_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (dependency_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+
+      CONSTRAINT no_self_task_dependency CHECK (dependent_task_id != dependency_task_id),
+      UNIQUE(dependent_task_id, dependency_task_id)
+    );
+
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
@@ -282,6 +296,8 @@ export function createDatabaseSchema(database: Database): void {
     CREATE INDEX IF NOT EXISTS idx_story_dependencies_dependency ON story_dependencies(dependency_story_id);
     CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependent ON epic_dependencies(dependent_epic_id);
     CREATE INDEX IF NOT EXISTS idx_epic_dependencies_dependency ON epic_dependencies(dependency_epic_id);
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_dependent ON task_dependencies(dependent_task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_dependency ON task_dependencies(dependency_task_id);
 
     -- Wiki indexes
     CREATE INDEX IF NOT EXISTS idx_wiki_pages_slug ON wiki_pages(slug);
@@ -341,6 +357,7 @@ export const REQUIRED_TABLES = [
   'test_cases',
   'story_dependencies',
   'epic_dependencies',
+  'task_dependencies',
   'comments',
   'user_story_content_changes',
   'user_story_acceptance_changes',

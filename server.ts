@@ -1878,11 +1878,23 @@ server.registerTool(
       const stmt = database.prepare(query);
       const tasks = stmt.all(...params);
 
-      // Add comment count to each task
+      // Add comment count and dependency information to each task
       for (const task of tasks) {
         task.comment_count = database.prepare(`
           SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
         `).get(task.id).count;
+
+        // Get dependencies (tasks this task depends on)
+        const depRows = database.prepare(`
+          SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?
+        `).all(task.id);
+        task.dependencies = depRows.map(row => row.dependency_task_id);
+
+        // Get dependent tasks (tasks that depend on this task)
+        const depTaskRows = database.prepare(`
+          SELECT dependent_task_id FROM task_dependencies WHERE dependency_task_id = ?
+        `).all(task.id);
+        task.dependent_tasks = depTaskRows.map(row => row.dependent_task_id);
       }
 
       const output = {
@@ -2960,8 +2972,163 @@ server.registerTool(
         isError: true
       };
     }
+   }
+ );
+
+// Tool: Manage Task Dependencies
+server.registerTool(
+  'manage_task_dependencies',
+  {
+    title: 'Manage Task Dependencies',
+    description: 'Add or remove dependencies for multiple tasks in bulk (tasks must belong to the same user story)',
+    inputSchema: {
+      operations: z.array(z.object({
+        task_id: z.number(),
+        action: z.enum(['add', 'remove']),
+        dependency_task_ids: z.array(z.number()).min(1)
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        task_id: z.number(),
+        success: z.boolean(),
+        action: z.string(),
+        added_dependencies: z.array(z.number()).optional(),
+        removed_dependencies: z.array(z.number()).optional(),
+        errors: z.array(z.string()).optional()
+      }))
+    }
+  },
+  async ({ operations }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const operation of operations) {
+        try {
+          const { task_id, action, dependency_task_ids } = operation;
+
+          // Validate that the dependent task exists
+          const dependentTask = database.prepare('SELECT id, user_story_id FROM tasks WHERE id = ?').get(task_id);
+          if (!dependentTask) {
+            results.push({
+              task_id,
+              success: false,
+              action,
+              errors: [`Task ${task_id} does not exist`]
+            });
+            continue;
+          }
+
+          const addedDependencies = [];
+          const removedDependencies = [];
+          const errors = [];
+
+          for (const dependencyTaskId of dependency_task_ids) {
+            try {
+              // Validate that the dependency task exists
+              const dependencyTask = database.prepare('SELECT id, user_story_id FROM tasks WHERE id = ?').get(dependencyTaskId);
+              if (!dependencyTask) {
+                errors.push(`Dependency task ${dependencyTaskId} does not exist`);
+                continue;
+              }
+
+              // Validate that both tasks belong to the same user story
+              if (dependentTask.user_story_id !== dependencyTask.user_story_id) {
+                errors.push(`Tasks ${task_id} and ${dependencyTaskId} belong to different user stories (${dependentTask.user_story_id} vs ${dependencyTask.user_story_id})`);
+                continue;
+              }
+
+              // Prevent self-dependency
+              if (task_id === dependencyTaskId) {
+                errors.push(`Task ${task_id} cannot depend on itself`);
+                continue;
+              }
+
+              // Check for existing dependency
+              const existingDependency = database.prepare(
+                'SELECT id FROM task_dependencies WHERE dependent_task_id = ? AND dependency_task_id = ?'
+              ).get(task_id, dependencyTaskId);
+
+              if (action === 'add') {
+                if (existingDependency) {
+                  errors.push(`Dependency already exists between tasks ${task_id} and ${dependencyTaskId}`);
+                  continue;
+                }
+
+                // Check for circular dependency
+                const wouldCreateCircular = database.prepare(`
+                  WITH RECURSIVE dependency_chain AS (
+                    SELECT dependent_task_id, dependency_task_id
+                    FROM task_dependencies
+                    WHERE dependent_task_id = ?
+                    UNION ALL
+                    SELECT td.dependent_task_id, td.dependency_task_id
+                    FROM task_dependencies td
+                    INNER JOIN dependency_chain dc ON td.dependent_task_id = dc.dependency_task_id
+                  )
+                  SELECT 1 FROM dependency_chain WHERE dependency_task_id = ?
+                `).get(dependencyTaskId, task_id);
+
+                if (wouldCreateCircular) {
+                  errors.push(`Adding dependency would create circular dependency between tasks ${task_id} and ${dependencyTaskId}`);
+                  continue;
+                }
+
+                // Add the dependency
+                database.prepare(
+                  'INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by) VALUES (?, ?, ?)'
+                ).run(task_id, dependencyTaskId, 'productmanager'); // Default to productmanager for now
+
+                addedDependencies.push(dependencyTaskId);
+              } else if (action === 'remove') {
+                if (!existingDependency) {
+                  errors.push(`No dependency exists between tasks ${task_id} and ${dependencyTaskId}`);
+                  continue;
+                }
+
+                // Remove the dependency
+                database.prepare(
+                  'DELETE FROM task_dependencies WHERE dependent_task_id = ? AND dependency_task_id = ?'
+                ).run(task_id, dependencyTaskId);
+
+                removedDependencies.push(dependencyTaskId);
+              }
+            } catch (error) {
+              errors.push(`Error processing dependency ${dependencyTaskId}: ${error.message}`);
+            }
+          }
+
+          results.push({
+            task_id,
+            success: errors.length === 0,
+            action,
+            added_dependencies: addedDependencies.length > 0 ? addedDependencies : undefined,
+            removed_dependencies: removedDependencies.length > 0 ? removedDependencies : undefined,
+            errors: errors.length > 0 ? errors : undefined
+          });
+        } catch (error) {
+          results.push({
+            task_id: operation.task_id,
+            success: false,
+            action: operation.action,
+            errors: [`Unexpected error: ${error.message}`]
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: `Processed ${results.filter(r => r.success).length} of ${operations.length} task dependency operations` }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Failed to manage task dependencies: ${error.message}` }],
+        isError: true
+      };
+    }
   }
-);
+ );
 
 // Register all wiki tools
 registerAllWikiTools(server, getDatabase);

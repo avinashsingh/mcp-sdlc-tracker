@@ -52,6 +52,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
 - `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
 - `manage_epic_dependencies`: Add or remove dependencies for multiple epics in bulk
+- `manage_task_dependencies`: Add or remove dependencies for multiple tasks in bulk (tasks must belong to same user story)
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
@@ -331,6 +332,14 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `created_by`: Stakeholder who created the dependency
 - **Constraints**: No self-dependencies, no duplicate dependencies, cascade delete
 
+#### Task Dependencies Table
+- `id`: Primary key (auto-increment)
+- `dependent_task_id`: Foreign key to tasks (task that depends on another)
+- `dependency_task_id`: Foreign key to tasks (task being depended upon)
+- `created_at`: Timestamp when dependency was created
+- `created_by`: Stakeholder who created the dependency
+- **Constraints**: No self-dependencies, no duplicate dependencies, cascade delete, same user story validation
+
 #### Comments Table
 - `id`: Primary key (auto-increment)
 - `entity_type`: Type of entity ('epic', 'user_story', 'task', 'bug', 'test_case')
@@ -402,6 +411,14 @@ Epics can have dependencies on other epics to model complex project relationship
 - **Bulk Management**: Add/remove dependencies for multiple epics in single operations
 - **Visual Indicators**: Dependency counts shown in UI with clickable links
 - **API Support**: Full REST API support for epic dependency management
+
+### Task Dependencies
+Tasks can have dependencies on other tasks within the same user story to model task execution order:
+- **Same User Story Constraint**: Tasks can only depend on other tasks within the same user story
+- **Dependency Validation**: Prevents circular dependencies, self-dependencies, and cross-story dependencies
+- **Bulk Management**: Add/remove dependencies for multiple tasks in single operations
+- **Visual Indicators**: Dependency counts shown in UI with clickable links
+- **API Support**: Full MCP API support for task dependency management
 
 ### Phase Management
 Entities can be assigned to custom phases for project organization:
