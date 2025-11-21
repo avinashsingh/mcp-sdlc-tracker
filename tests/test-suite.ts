@@ -398,30 +398,7 @@ class TrackerTestSuite {
       const deps2 = db.prepare('SELECT * FROM task_dependencies').all();
       this.assert(deps2.length === 2, 'Database allows cross-story dependencies (MCP validation prevents this)');
 
-      // Clean up test data to not affect other tests
-      db.prepare('DELETE FROM task_dependencies WHERE dependent_task_id >= 3').run();
-      db.prepare('DELETE FROM tasks WHERE id >= 3').run();
-      db.prepare('DELETE FROM user_stories WHERE id >= 3').run();
-
-      this.recordTest('testTaskDependencies', true);
-    } catch (error) {
-      this.recordTest('testTaskDependencies', false, error.message);
-    }
-  }
-
-      // Test 3: Prevent duplicate dependencies
-      try {
-        db.prepare(`
-          INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
-          VALUES (?, ?, ?)
-        `).run(2, 1, 'architect'); // Same dependency again
-        this.assert(false, 'Should prevent duplicate dependencies');
-      } catch (error) {
-        this.assert(error.message.includes('UNIQUE constraint'), 'Should prevent duplicate dependencies');
-      }
-
-      // Test 4: Database allows circular dependencies (MCP tool prevents this)
-      // Note: The database doesn't prevent circular dependencies - validation happens at MCP layer
+      // Test 5: Database allows circular dependencies (MCP tool prevents this)
       db.prepare(`
         INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
         VALUES (?, ?, ?)
@@ -429,16 +406,6 @@ class TrackerTestSuite {
 
       const deps3 = db.prepare('SELECT * FROM task_dependencies').all();
       this.assert(deps3.length === 3, 'Database allows circular dependencies (MCP validation prevents this)');
-
-      // Test 5: Allow cross-story dependencies at database level (validation happens at MCP level)
-      // Note: This tests that the database allows it, but MCP tool should prevent it
-      db.prepare(`
-        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
-        VALUES (?, ?, ?)
-      `).run(3, 1, 'architect'); // Task 3 (Story 2) depends on Task 1 (Story 1)
-
-      const deps2 = db.prepare('SELECT * FROM task_dependencies').all();
-      this.assert(deps2.length === 3, 'Database allows cross-story and circular dependencies (MCP validation prevents this)');
 
       // Clean up test data to not affect other tests
       db.prepare('DELETE FROM task_dependencies WHERE dependent_task_id >= 3').run();
@@ -590,22 +557,24 @@ class TrackerTestSuite {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const usResult = userStoryStmt.run(1, 'US with Phase', 'Desc', 'Criteria', 5, 'developer', 'Development', 'Planning', 'productmanager');
-      this.assert(usResult.lastInsertRowid === 3, 'Should create user story with phase');
+      const userStoryId = usResult.lastInsertRowid as number;
+      this.assert(userStoryId > 0, 'Should create user story with phase');
 
       // Test creating task with phase
       const taskStmt = db.prepare(`
         INSERT INTO tasks (user_story_id, title, description, assigned_to, estimated_hours, phase, phase_status, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const taskResult = taskStmt.run(3, 'Task with Phase', 'Task desc', 'developer', 4, 'Development', 'In Progress', 'architect');
-      this.assert(taskResult.lastInsertRowid === 3, 'Should create task with phase');
+      const taskResult = taskStmt.run(userStoryId, 'Task with Phase', 'Task desc', 'developer', 4, 'Development', 'In Progress', 'architect');
+      const taskId = taskResult.lastInsertRowid as number;
+      this.assert(taskId > 0, 'Should create task with phase');
 
       // Verify phases were set
-      const usCheck = db.prepare('SELECT phase, phase_status FROM user_stories WHERE id = ?').get(3) as { phase: string; phase_status: string };
+      const usCheck = db.prepare('SELECT phase, phase_status FROM user_stories WHERE id = ?').get(userStoryId) as { phase: string; phase_status: string };
       this.assert(usCheck.phase === 'Development', 'User story phase should be set');
       this.assert(usCheck.phase_status === 'Planning', 'User story phase_status should be set');
 
-      const taskCheck = db.prepare('SELECT phase, phase_status FROM tasks WHERE id = ?').get(3) as { phase: string; phase_status: string };
+      const taskCheck = db.prepare('SELECT phase, phase_status FROM tasks WHERE id = ?').get(taskId) as { phase: string; phase_status: string };
       this.assert(taskCheck.phase === 'Development', 'Task phase should be set');
       this.assert(taskCheck.phase_status === 'In Progress', 'Task phase_status should be set');
 
