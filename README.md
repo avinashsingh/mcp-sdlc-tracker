@@ -55,6 +55,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback
+- `get_comments`: Retrieve comments for a specific SDLC entity
 
 ### Wiki Management
 - `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification
