@@ -1029,18 +1029,18 @@ server.registerTool(
   {
     title: 'Create User Stories',
     description: 'Create multiple user stories in the SDLC tracker',
-    inputSchema: {
-      user_stories: z.array(z.object({
-        epic_id: z.number().optional(),
-        title: z.string().min(1),
-        description: z.string().optional(),
-        acceptance_criteria: z.string().optional(),
-        story_points: z.number().optional(),
-        assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
-        phase: z.string().optional(),
-        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
-      })).min(1)
-    },
+     inputSchema: {
+       user_stories: z.array(z.object({
+         epic_id: z.number().optional(),
+         title: z.string().min(1),
+         description: z.string().optional(),
+         acceptance_criteria: z.string().optional(),
+         story_points: z.number().optional(),
+         assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
+         phase: z.string().optional(),
+         phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+       })).min(1)
+     },
     outputSchema: {
       results: z.array(z.object({
         success: z.boolean(),
@@ -1056,16 +1056,23 @@ server.registerTool(
 
       for (const story of user_stories) {
         try {
-          // Validate foreign key if epic_id provided
-          if (story.epic_id) {
-            const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(story.epic_id);
-            if (!epic) {
-              results.push({
-                success: false,
-                error: `Invalid epic ID: ${story.epic_id}`
-              });
-              continue;
-            }
+          // Validate epic_id is required for user stories
+          if (!story.epic_id) {
+            results.push({
+              success: false,
+              error: 'epic_id is required for user stories'
+            });
+            continue;
+          }
+
+          // Validate epic exists
+          const epic = database.prepare('SELECT id FROM epics WHERE id = ?').get(story.epic_id);
+          if (!epic) {
+            results.push({
+              success: false,
+              error: `Invalid epic ID: ${story.epic_id}`
+            });
+            continue;
           }
 
           const stmt = database.prepare(`
@@ -1147,16 +1154,23 @@ server.registerTool(
 
       for (const task of tasks) {
         try {
-          // Validate foreign key if user_story_id provided
-          if (task.user_story_id) {
-            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
-            if (!story) {
-              results.push({
-                success: false,
-                error: `Invalid user story ID: ${task.user_story_id}`
-              });
-              continue;
-            }
+          // Validate user_story_id is required for tasks
+          if (!task.user_story_id) {
+            results.push({
+              success: false,
+              error: 'user_story_id is required for tasks'
+            });
+            continue;
+          }
+
+          // Validate user story exists
+          const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
+          if (!story) {
+            results.push({
+              success: false,
+              error: `Invalid user story ID: ${task.user_story_id}`
+            });
+            continue;
           }
 
           const stmt = database.prepare(`
@@ -1239,7 +1253,16 @@ server.registerTool(
 
       for (const bug of bugs) {
         try {
-          // Validate foreign keys
+          // Validate that at least one parent relationship exists
+          if (!bug.user_story_id && !bug.task_id) {
+            results.push({
+              success: false,
+              error: 'Either user_story_id or task_id is required for bugs'
+            });
+            continue;
+          }
+
+          // Validate user story if provided
           if (bug.user_story_id) {
             const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(bug.user_story_id);
             if (!story) {
@@ -1251,6 +1274,7 @@ server.registerTool(
             }
           }
 
+          // Validate task if provided
           if (bug.task_id) {
             const task = database.prepare('SELECT id FROM tasks WHERE id = ?').get(bug.task_id);
             if (!task) {
@@ -1343,16 +1367,23 @@ server.registerTool(
 
       for (const testCase of test_cases) {
         try {
-          // Validate foreign key if user_story_id provided
-          if (testCase.user_story_id) {
-            const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
-            if (!story) {
-              results.push({
-                success: false,
-                error: `Invalid user story ID: ${testCase.user_story_id}`
-              });
-              continue;
-            }
+          // Validate user_story_id is required for test cases
+          if (!testCase.user_story_id) {
+            results.push({
+              success: false,
+              error: 'user_story_id is required for test cases'
+            });
+            continue;
+          }
+
+          // Validate user story exists
+          const story = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
+          if (!story) {
+            results.push({
+              success: false,
+              error: `Invalid user story ID: ${testCase.user_story_id}`
+            });
+            continue;
           }
 
           const stmt = database.prepare(`
