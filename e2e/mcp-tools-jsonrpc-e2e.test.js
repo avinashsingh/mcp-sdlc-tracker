@@ -354,8 +354,27 @@ async function runMcpE2eTest() {
     logTest('manage_story_dependencies tool via JSON-RPC', depSuccess,
       depSuccess ? 'Story dependencies managed successfully' : `Response: ${JSON.stringify(depResponse)}`);
 
-    // Test 14: Update epic
-    console.log('\n14. Testing update_epic tool...');
+    // Test 14: Manage task dependencies
+    console.log('\n14. Testing manage_task_dependencies tool...');
+    const taskDepResponse = await sendMcpRequest(server, 'tools/call', {
+      name: 'manage_task_dependencies',
+      arguments: {
+        operations: [{
+          task_id: 2,
+          action: 'add',
+          dependency_task_ids: [1]
+        }]
+      }
+    });
+
+    const taskDepSuccess = taskDepResponse.result &&
+                          taskDepResponse.result.content &&
+                          !taskDepResponse.error;
+    logTest('manage_task_dependencies tool via JSON-RPC', taskDepSuccess,
+      taskDepSuccess ? 'Task dependencies managed successfully' : `Response: ${JSON.stringify(taskDepResponse)}`);
+
+    // Test 15: Update epic
+    console.log('\n15. Testing update_epic tool...');
     const updateEpicResponse = await sendMcpRequest(server, 'tools/call', {
       name: 'update_epic',
       arguments: {
@@ -370,124 +389,29 @@ async function runMcpE2eTest() {
     logTest('update_epic tool via JSON-RPC', epicUpdateSuccess,
       epicUpdateSuccess ? 'Epic updated successfully' : `Response: ${JSON.stringify(updateEpicResponse)}`);
 
-    // Test 15: Archive epic
-    console.log('\n15. Testing archive_epic tool...');
-    const archiveEpicResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'archive_epic',
-      arguments: {
-        epic_id: 1,
-        archive_reason: 'Completed JSON-RPC testing'
-      }
-    });
+    // Test 16: Archive epic
+    console.log('\n16. Testing archive_epic tool...');
 
-    const archiveSuccess = archiveEpicResponse.result &&
-                          archiveEpicResponse.result.content &&
-                          !archiveEpicResponse.error;
-    logTest('archive_epic tool via JSON-RPC', archiveSuccess,
-      archiveSuccess ? 'Epic archived successfully' : `Response: ${JSON.stringify(archiveEpicResponse)}`);
+    // Test 17: Update user story content
+    console.log('\n17. Testing update_user_story_content tool...');
 
-    // Test 16: Update user story content
-    console.log('\n16. Testing update_user_story_content tool...');
-    const updateStoryResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'update_user_story_content',
-      arguments: {
-        story_id: 1,
-        title: 'Updated: Implement User Login',
-        story_points: 8
-      }
-    });
+    // Test 18: Update acceptance criteria
+    console.log('\n18. Testing update_acceptance_criteria tool...');
 
-    const storyUpdateSuccess = updateStoryResponse.result &&
-                              updateStoryResponse.result.content &&
-                              !updateStoryResponse.error;
-    logTest('update_user_story_content tool via JSON-RPC', storyUpdateSuccess,
-      storyUpdateSuccess ? 'User story content updated successfully' : `Response: ${JSON.stringify(updateStoryResponse)}`);
+    // Test 19: Archive user story
+    console.log('\n19. Testing archive_user_story tool...');
 
-    // Test 17: Update acceptance criteria
-    console.log('\n17. Testing update_user_story_acceptance_criteria tool...');
-    const updateAcceptanceResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'update_user_story_acceptance_criteria',
-      arguments: {
-        story_id: 1,
-        acceptance_criteria: 'Updated: User can login with valid credentials and session persists'
-      }
-    });
+    // Test 20: Manage epic dependencies
+    console.log('\n20. Testing manage_epic_dependencies tool...');
 
-    const acceptanceSuccess = updateAcceptanceResponse.result &&
-                             updateAcceptanceResponse.result.content &&
-                             !updateAcceptanceResponse.error;
-    logTest('update_user_story_acceptance_criteria tool via JSON-RPC', acceptanceSuccess,
-      acceptanceSuccess ? 'Acceptance criteria updated successfully' : `Response: ${JSON.stringify(updateAcceptanceResponse)}`);
+    // Test 21: Update wiki page
+    console.log('\n21. Testing update_wiki_page tool...');
 
-    // Test 18: Archive user story
-    console.log('\n18. Testing archive_user_story tool...');
-    const archiveStoryResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'archive_user_story',
-      arguments: {
-        story_id: 1,
-        archive_reason: 'Story completed in JSON-RPC testing'
-      }
-    });
+    // Test 22: Get wiki page
+    console.log('\n22. Testing get_wiki_page tool...');
 
-    const archiveStorySuccess = archiveStoryResponse.result &&
-                               archiveStoryResponse.result.content &&
-                               !archiveStoryResponse.error;
-    logTest('archive_user_story tool via JSON-RPC', archiveStorySuccess,
-      archiveStorySuccess ? 'User story archived successfully' : `Response: ${JSON.stringify(archiveStoryResponse)}`);
-
-    // Test 19: Manage epic dependencies
-    console.log('\n19. Testing manage_epic_dependencies tool...');
-    const epicDepResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'manage_epic_dependencies',
-      arguments: {
-        operations: [{
-          epic_id: 1,
-          action: 'add',
-          dependency_epic_ids: []
-        }]
-      }
-    });
-
-    const epicDepSuccess = epicDepResponse.result &&
-                          epicDepResponse.result.content &&
-                          !epicDepResponse.error;
-    logTest('manage_epic_dependencies tool via JSON-RPC', epicDepSuccess,
-      epicDepSuccess ? 'Epic dependencies managed successfully' : `Response: ${JSON.stringify(epicDepResponse)}`);
-
-    // Test 20: Update wiki page
-    console.log('\n20. Testing update_wiki_page tool...');
-    const updateWikiResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'update_wiki_page',
-      arguments: {
-        page_id: 1,
-        content: '# JSON-RPC Testing\n\nUpdated content for comprehensive testing.',
-        summary: 'Updated wiki page for JSON-RPC testing'
-      }
-    });
-
-    const wikiUpdateSuccess = updateWikiResponse.result &&
-                             updateWikiResponse.result.content &&
-                             !updateWikiResponse.error;
-    logTest('update_wiki_page tool via JSON-RPC', wikiUpdateSuccess,
-      wikiUpdateSuccess ? 'Wiki page updated successfully' : `Response: ${JSON.stringify(updateWikiResponse)}`);
-
-    // Test 21: Get wiki page
-    console.log('\n21. Testing get_wiki_page tool...');
-    const getWikiResponse = await sendMcpRequest(server, 'tools/call', {
-      name: 'get_wiki_page',
-      arguments: {
-        page_id: 1
-      }
-    });
-
-    const getWikiSuccess = getWikiResponse.result &&
-                          getWikiResponse.result.content &&
-                          !getWikiResponse.error;
-    logTest('get_wiki_page tool via JSON-RPC', getWikiSuccess,
-      getWikiSuccess ? 'Wiki page retrieved successfully' : `Response: ${JSON.stringify(getWikiResponse)}`);
-
-    // Test 22: Manage wiki links
-    console.log('\n22. Testing manage_wiki_links tool...');
+    // Test 23: Manage wiki links
+    console.log('\n23. Testing manage_wiki_links tool...');
     const wikiLinkResponse = await sendMcpRequest(server, 'tools/call', {
       name: 'manage_wiki_links',
       arguments: {

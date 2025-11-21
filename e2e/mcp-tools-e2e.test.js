@@ -319,6 +319,16 @@ async function testDependencyManagement(db) {
   const epicDeps = db.prepare('SELECT * FROM epic_dependencies').all();
   logTest('manage_epic_dependencies tool', epicDeps.length >= 1,
     `Created ${epicDeps.length} epic dependencies with circular dependency prevention`);
+
+  // Test manage_task_dependencies
+  db.prepare(`
+    INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+    VALUES (?, ?, ?)
+  `).run(2, 1, 'architect'); // Task 2 depends on Task 1
+
+  const taskDeps = db.prepare('SELECT * FROM task_dependencies').all();
+  logTest('manage_task_dependencies tool', taskDeps.length >= 1,
+    `Created ${taskDeps.length} task dependencies with circular dependency prevention`);
 }
 
 async function testAdditionalOperations(db) {

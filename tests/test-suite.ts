@@ -111,6 +111,18 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS task_dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dependent_task_id INTEGER NOT NULL,
+    dependency_task_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    FOREIGN KEY (dependent_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (dependency_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    CONSTRAINT no_self_task_dependency CHECK (dependent_task_id != dependency_task_id),
+    UNIQUE(dependent_task_id, dependency_task_id)
+  );
+
   CREATE TABLE IF NOT EXISTS status_transitions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
@@ -329,6 +341,113 @@ class TrackerTestSuite {
       this.recordTest('testCreateComments', true);
     } catch (error) {
       this.recordTest('testCreateComments', false, error.message);
+    }
+  }
+
+  async testTaskDependencies() {
+    try {
+      // Create an additional user story for cross-story testing
+      const story2Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Story 2', 'Second story for dependency testing', 'architect', 'productmanager', 'architect');
+
+      // Create additional tasks in different stories
+      const task3Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(story2Result.lastInsertRowid, 'Task 3', 'Task in different story', 'architect', 'architect', 'architect');
+
+      // Test 1: Valid dependency within same story (Task 2 depends on Task 1)
+      db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `).run(2, 1, 'architect'); // Task 2 depends on Task 1
+
+      const deps1 = db.prepare('SELECT * FROM task_dependencies').all();
+      this.assert(deps1.length === 1, 'Should create valid task dependency');
+
+      // Test 2: Prevent self-dependency (Task 1 depends on Task 1)
+      try {
+        db.prepare(`
+          INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+          VALUES (?, ?, ?)
+        `).run(1, 1, 'architect');
+        this.assert(false, 'Should prevent self-dependency');
+      } catch (error) {
+        this.assert(error.message.includes('CHECK constraint'), 'Should prevent self-dependency with CHECK constraint');
+      }
+
+      // Test 3: Prevent duplicate dependencies
+      try {
+        db.prepare(`
+          INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+          VALUES (?, ?, ?)
+        `).run(2, 1, 'architect'); // Same dependency again
+        this.assert(false, 'Should prevent duplicate dependencies');
+      } catch (error) {
+        this.assert(error.message.includes('UNIQUE constraint'), 'Should prevent duplicate dependencies');
+      }
+
+      // Test 4: Database allows cross-story dependencies (MCP validation prevents this)
+      db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `).run(3, 1, 'architect'); // Task 3 (Story 2) depends on Task 1 (Story 1)
+
+      const deps2 = db.prepare('SELECT * FROM task_dependencies').all();
+      this.assert(deps2.length === 2, 'Database allows cross-story dependencies (MCP validation prevents this)');
+
+      // Clean up test data to not affect other tests
+      db.prepare('DELETE FROM task_dependencies WHERE dependent_task_id >= 3').run();
+      db.prepare('DELETE FROM tasks WHERE id >= 3').run();
+      db.prepare('DELETE FROM user_stories WHERE id >= 3').run();
+
+      this.recordTest('testTaskDependencies', true);
+    } catch (error) {
+      this.recordTest('testTaskDependencies', false, error.message);
+    }
+  }
+
+      // Test 3: Prevent duplicate dependencies
+      try {
+        db.prepare(`
+          INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+          VALUES (?, ?, ?)
+        `).run(2, 1, 'architect'); // Same dependency again
+        this.assert(false, 'Should prevent duplicate dependencies');
+      } catch (error) {
+        this.assert(error.message.includes('UNIQUE constraint'), 'Should prevent duplicate dependencies');
+      }
+
+      // Test 4: Database allows circular dependencies (MCP tool prevents this)
+      // Note: The database doesn't prevent circular dependencies - validation happens at MCP layer
+      db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `).run(1, 2, 'architect'); // Task 1 depends on Task 2 (circular)
+
+      const deps3 = db.prepare('SELECT * FROM task_dependencies').all();
+      this.assert(deps3.length === 3, 'Database allows circular dependencies (MCP validation prevents this)');
+
+      // Test 5: Allow cross-story dependencies at database level (validation happens at MCP level)
+      // Note: This tests that the database allows it, but MCP tool should prevent it
+      db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `).run(3, 1, 'architect'); // Task 3 (Story 2) depends on Task 1 (Story 1)
+
+      const deps2 = db.prepare('SELECT * FROM task_dependencies').all();
+      this.assert(deps2.length === 3, 'Database allows cross-story and circular dependencies (MCP validation prevents this)');
+
+      // Clean up test data to not affect other tests
+      db.prepare('DELETE FROM task_dependencies WHERE dependent_task_id >= 3').run();
+      db.prepare('DELETE FROM tasks WHERE id >= 3').run();
+      db.prepare('DELETE FROM user_stories WHERE id >= 3').run();
+
+      this.recordTest('testTaskDependencies', true);
+    } catch (error) {
+      this.recordTest('testTaskDependencies', false, error.message);
     }
   }
 
@@ -595,6 +714,9 @@ class TrackerTestSuite {
     await this.testListTasks();
     await this.testListBugs();
     await this.testListTestCases();
+
+    // Test task dependencies (after list tests to avoid affecting counts)
+    await this.testTaskDependencies();
 
     // Test update operations
     await this.testUpdateEntityStatus();
