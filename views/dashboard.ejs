@@ -91,6 +91,31 @@
       background-color: #f8f9fa;
       font-weight: 600;
     }
+
+    /* Priority/Severity badge styling */
+    .badge.bg-danger {
+      animation: pulse 2s infinite;
+    }
+
+    .badge.bg-warning {
+      background: linear-gradient(45deg, #ffc107, #fd7e14);
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.7; }
+      100% { opacity: 1; }
+    }
+
+    /* High priority items get subtle highlighting */
+    .entity-card[data-priority="high"] {
+      border-left: 4px solid #dc3545;
+    }
+
+    .entity-card[data-severity="Critical"] {
+      border-left: 4px solid #dc3545;
+      background: linear-gradient(90deg, rgba(220, 53, 69, 0.05) 0%, transparent 100%);
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -134,6 +159,42 @@
             </div>
 
             <div id="sdlc-content" class="d-none">
+              <!-- Sorting Controls -->
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                  <strong>Sort by:</strong>
+                  <div class="btn-group btn-group-sm ms-2" role="group">
+                    <input type="radio" class="btn-check" name="sortBy" id="sort-updated" autocomplete="off" checked>
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-updated">Updated</label>
+
+                    <input type="radio" class="btn-check" name="sortBy" id="sort-created" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-created">Created</label>
+
+                    <input type="radio" class="btn-check" name="sortBy" id="sort-priority" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-priority">
+                      <i class="bi bi-exclamation-triangle me-1"></i>Priority
+                    </label>
+
+                    <input type="radio" class="btn-check" name="sortBy" id="sort-status" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-status">Status</label>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="btn-group btn-group-sm" role="group">
+                    <input type="radio" class="btn-check" name="sortOrder" id="sort-desc" autocomplete="off" checked>
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-desc">
+                      <i class="bi bi-sort-down"></i>
+                    </label>
+
+                    <input type="radio" class="btn-check" name="sortOrder" id="sort-asc" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="sort-asc">
+                      <i class="bi bi-sort-up"></i>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <!-- SDLC Hierarchy will be rendered here -->
             </div>
           </div>
@@ -222,6 +283,10 @@
     let epicsData = [];
     let wikiData = [];
     let currentRoute = '/';
+
+    // Sorting variables
+    let currentSortBy = 'updated_at';
+    let currentSortOrder = 'desc';
 
     // Client-side routing
     const routes = {
@@ -325,6 +390,66 @@
       return routeMap[type] || type;
     }
 
+    function sortEntities(entities, sortBy, sortOrder) {
+      return entities.sort((a, b) => {
+        let aValue, bValue;
+
+        switch (sortBy) {
+          case 'priority':
+            // Priority sorting: high > medium > low, severity: Critical > High > Medium > Low
+            const priorityOrder = { 'high': 4, 'medium': 3, 'low': 2, '': 1 };
+            const severityOrder = { 'Critical': 8, 'High': 7, 'Medium': 6, 'Low': 5, '': 1 };
+            aValue = priorityOrder[a.priority] || severityOrder[a.severity] || 1;
+            bValue = priorityOrder[b.priority] || severityOrder[b.severity] || 1;
+            break;
+
+          case 'status':
+            // Status sorting: New > In Progress > Review > QA > UAT > Closed
+            const statusOrder = {
+              'New': 1, 'In Progress': 2, 'Review': 3, 'QA': 4, 'UAT': 5, 'Closed': 6,
+              'Open': 1, 'Fixed': 5, 'Critical': 6, 'High': 5, 'Medium': 4, 'Low': 3
+            };
+            aValue = statusOrder[a.status] || 0;
+            bValue = statusOrder[b.status] || 0;
+            break;
+
+          case 'created_at':
+            aValue = new Date(a.created_at).getTime();
+            bValue = new Date(b.created_at).getTime();
+            break;
+
+          case 'updated_at':
+          default:
+            aValue = new Date(a.updated_at).getTime();
+            bValue = new Date(b.updated_at).getTime();
+            break;
+        }
+
+        if (sortOrder === 'asc') {
+          return aValue - bValue;
+        } else {
+          return bValue - aValue;
+        }
+      });
+    }
+
+    function applySorting() {
+      // Re-sort epicsData and re-render
+      epicsData.forEach(epic => {
+        if (epic.userStories) {
+          epic.userStories = sortEntities(epic.userStories, currentSortBy, currentSortOrder);
+
+          epic.userStories.forEach(story => {
+            if (story.tasks) story.tasks = sortEntities(story.tasks, currentSortBy, currentSortOrder);
+            if (story.bugs) story.bugs = sortEntities(story.bugs, currentSortBy, currentSortOrder);
+            if (story.testCases) story.testCases = sortEntities(story.testCases, currentSortBy, currentSortOrder);
+          });
+        }
+      });
+
+      renderSDLC();
+    }
+
     function createEntityCard(entity, type, level = 1, hasChildren = false) {
       const badgeClass = getStatusBadge(entity.status);
       const iconClass = getEntityIcon(type);
@@ -349,14 +474,51 @@
         </span>`;
       }
 
+      // Priority/Severity badge
+      let prioritySeverityBadge = '';
+      if (type === 'task' && entity.priority) {
+        const priorityColors = {
+          'high': 'danger',
+          'medium': 'warning',
+          'low': 'info'
+        };
+        const priorityIcons = {
+          'high': 'bi-exclamation-triangle-fill',
+          'medium': 'bi-dash-circle-fill',
+          'low': 'bi-arrow-down-circle-fill'
+        };
+        prioritySeverityBadge = `<span class="badge bg-${priorityColors[entity.priority]} ms-1" title="Priority: ${entity.priority}">
+          <i class="bi ${priorityIcons[entity.priority]} me-1"></i>${entity.priority}
+        </span>`;
+      } else if (type === 'bug' && entity.severity) {
+        const severityColors = {
+          'Critical': 'danger',
+          'High': 'danger',
+          'Medium': 'warning',
+          'Low': 'secondary'
+        };
+        prioritySeverityBadge = `<span class="badge bg-${severityColors[entity.severity]} ms-1" title="Severity: ${entity.severity}">
+          <i class="bi bi-bug-fill me-1"></i>${entity.severity}
+        </span>`;
+      }
+
       // Expand/collapse button
       const expandButton = hasChildren ?
         `<button class="btn btn-sm btn-outline-secondary me-2 expand-btn" data-bs-toggle="collapse" data-bs-target="#collapse_${entityId}" aria-expanded="true" onclick="event.stopPropagation()">
           <i class="bi bi-dash"></i>
         </button>` : '';
 
+      // Data attributes for priority highlighting
+      const dataAttrs = [];
+      if (type === 'task' && entity.priority === 'high') {
+        dataAttrs.push('data-priority="high"');
+      } else if (type === 'bug' && entity.severity === 'Critical') {
+        dataAttrs.push('data-severity="Critical"');
+      }
+      const dataAttrString = dataAttrs.length > 0 ? ' ' + dataAttrs.join(' ') : '';
+
       return `
-        <div class="card entity-card mb-2 hierarchy-level-${level}" onclick="navigateTo('/${route}/${entity.id}')" style="cursor: pointer;">
+        <div class="card entity-card mb-2 hierarchy-level-${level}${dataAttrString}" onclick="navigateTo('/${route}/${entity.id}')" style="cursor: pointer;">
           <div class="card-body py-2">
             <div class="d-flex justify-content-between align-items-center">
               <div class="d-flex align-items-center flex-grow-1">
@@ -366,6 +528,7 @@
                   <div class="d-flex align-items-center mb-1">
                     <span class="fw-medium text-truncate">${entity.title || entity.description || `ID: ${entity.id}`}</span>
                     <span class="badge bg-${badgeClass} ms-2 status-badge">${entity.status}</span>
+                    ${prioritySeverityBadge}
                     ${phaseInfo}
                     ${dependenciesInfo}
                     ${commentsInfo}
@@ -1461,6 +1624,21 @@
 
     // Load data when page loads and handle routing
     document.addEventListener('DOMContentLoaded', () => {
+      // Sort controls
+      document.querySelectorAll('input[name="sortBy"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          currentSortBy = e.target.id.replace('sort-', '');
+          applySorting();
+        });
+      });
+
+      document.querySelectorAll('input[name="sortOrder"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          currentSortOrder = e.target.id.replace('sort-', '');
+          applySorting();
+        });
+      });
+
       loadData().then(() => {
         // Handle initial route
         const path = window.location.pathname;
