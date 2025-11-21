@@ -891,8 +891,7 @@ server.registerTool(
     },
     outputSchema: {
       success: z.boolean(),
-      message: z.string(),
-      database_path: z.string()
+      message: z.string()
     }
   },
   async ({ path }) => {
@@ -919,8 +918,7 @@ server.registerTool(
           content: [{ type: 'text', text: 'Database already initialized' }],
           structuredContent: {
             success: false,
-            message: 'Database already initialized',
-            database_path: dbPath!
+            message: 'Already initialized',
           }
         };
       }
@@ -944,8 +942,7 @@ server.registerTool(
         content: [{ type: 'text', text: 'Database initialized successfully' }],
         structuredContent: {
           success: true,
-          message: 'Database initialized successfully',
-          database_path: dbFilePath
+          message: 'Initialized successfully'
         }
       };
     } catch (error) {
