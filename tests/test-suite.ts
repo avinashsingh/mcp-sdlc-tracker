@@ -418,6 +418,68 @@ class TrackerTestSuite {
     }
   }
 
+  async testTaskDependencyFiltering() {
+    try {
+      // Create additional test data
+      const story2Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Story for Filtering', 'Story for dependency filtering tests', 'architect', 'productmanager', 'architect');
+
+      // Create additional tasks
+      const task3Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(story2Result.lastInsertRowid, 'Task 3', 'Independent task', 'architect', 'architect', 'architect');
+
+      const task4Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(story2Result.lastInsertRowid, 'Task 4', 'Task that depends on Task 3', 'architect', 'architect', 'architect');
+
+      // Create dependencies: Task 4 depends on Task 3, Task 2 depends on Task 1 (from previous test)
+      db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `).run(task4Result.lastInsertRowid, task3Result.lastInsertRowid, 'architect');
+
+      // Test 1: Filter tasks that depend on a specific task (depends_on)
+      const dependsOnResult = await this.callTool('list_tasks', { depends_on: task3Result.lastInsertRowid });
+      this.assert(dependsOnResult.data.length === 1, 'Should find 1 task that depends on Task 3');
+      this.assert(dependsOnResult.data[0].id === task4Result.lastInsertRowid, 'Should return Task 4');
+
+      // Test 2: Filter tasks that are depended on by a specific task (depended_by)
+      const dependedByResult = await this.callTool('list_tasks', { depended_by: task4Result.lastInsertRowid });
+      this.assert(dependedByResult.data.length === 1, 'Should find 1 task that is depended on by Task 4');
+      this.assert(dependedByResult.data[0].id === task3Result.lastInsertRowid, 'Should return Task 3');
+
+      // Test 3: Filter tasks that have dependencies (has_dependencies: true)
+      const hasDepsResult = await this.callTool('list_tasks', { has_dependencies: true });
+      this.assert(hasDepsResult.data.length >= 2, 'Should find tasks with dependencies');
+
+      // Test 4: Filter tasks that have no dependencies (has_dependencies: false)
+      const noDepsResult = await this.callTool('list_tasks', { has_dependencies: false });
+      this.assert(noDepsResult.data.length >= 1, 'Should find tasks without dependencies');
+
+      // Test 5: Combine dependency filter with other filters
+      const combinedResult = await this.callTool('list_tasks', {
+        user_story_id: story2Result.lastInsertRowid,
+        has_dependencies: true
+      });
+      this.assert(combinedResult.data.length === 1, 'Should find 1 task in story 2 with dependencies');
+      this.assert(combinedResult.data[0].id === task4Result.lastInsertRowid, 'Should return Task 4');
+
+      // Clean up test data
+      db.prepare('DELETE FROM task_dependencies WHERE dependent_task_id >= 3').run();
+      db.prepare('DELETE FROM tasks WHERE id >= 3').run();
+      db.prepare('DELETE FROM user_stories WHERE id >= 3').run();
+
+      this.recordTest('testTaskDependencyFiltering', true);
+    } catch (error) {
+      this.recordTest('testTaskDependencyFiltering', false, error.message);
+    }
+  }
+
   async testListEpics() {
     try {
       const epics = db.prepare('SELECT * FROM epics ORDER BY id DESC').all();

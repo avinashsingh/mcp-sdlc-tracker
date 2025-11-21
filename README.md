@@ -38,7 +38,10 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 ### Task Management
 - `create_tasks`: Create multiple tasks with user story association, time estimates, and architect/developer assignment
-- `list_tasks`: List tasks with optional filtering
+- `list_tasks`: List tasks with optional filtering by user story, status, assignee, and dependency relationships
+  - `depends_on`: Filter tasks that depend on a specific task ID
+  - `depended_by`: Filter tasks that are depended on by a specific task ID
+  - `has_dependencies`: Filter tasks that have (true) or don't have (false) any dependencies
 
 ### Bug Tracking
 - `create_bugs`: Create multiple bug reports with severity levels, reporter, and assignee information

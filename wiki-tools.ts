@@ -26,8 +26,8 @@ export function registerCreateWikiPage(server: any) {
         content: z.string().min(1),
         summary: z.string().optional(),
         tags: z.array(z.string()).optional(),
-        category: z.enum(['technical', 'process', 'business', 'qa', 'knowledge']).optional(),
-        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional()
+        category: z.string().optional(),
+        assigned_to: z.string().optional()
       },
       outputSchema: {
         success: z.boolean(),
@@ -38,6 +38,28 @@ export function registerCreateWikiPage(server: any) {
     async ({ title, content, summary, tags, category, assigned_to }) => {
       try {
         const database = getDatabaseSafe();
+
+        // Validate category if provided
+        if (category !== undefined) {
+          const allowedCategories = ['technical', 'process', 'business', 'qa', 'knowledge'];
+          if (!allowedCategories.includes(category)) {
+            return {
+              content: [{ type: 'text', text: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}` }],
+              isError: true
+            };
+          }
+        }
+
+        // Validate assigned_to if provided
+        if (assigned_to !== undefined) {
+          const allowedAssignees = ['productmanager', 'programmanager', 'developer', 'tester', 'architect'];
+          if (!allowedAssignees.includes(assigned_to)) {
+            return {
+              content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+              isError: true
+            };
+          }
+        }
 
         // Generate slug from title
         const slug = title.toLowerCase()
@@ -107,8 +129,8 @@ export function registerUpdateWikiPage(server: any) {
         content: z.string().min(1).optional(),
         summary: z.string().optional(),
         tags: z.array(z.string()).optional(),
-        category: z.enum(['technical', 'process', 'business', 'qa', 'knowledge']).optional(),
-        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+        category: z.string().optional(),
+        assigned_to: z.string().optional(),
         change_reason: z.string().optional()
       },
       outputSchema: {
@@ -120,6 +142,28 @@ export function registerUpdateWikiPage(server: any) {
     async ({ wiki_page_id, title, content, summary, tags, category, assigned_to, change_reason }) => {
       try {
         const database = getDatabaseSafe();
+
+        // Validate category if provided
+        if (category !== undefined) {
+          const allowedCategories = ['technical', 'process', 'business', 'qa', 'knowledge'];
+          if (!allowedCategories.includes(category)) {
+            return {
+              content: [{ type: 'text', text: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}` }],
+              isError: true
+            };
+          }
+        }
+
+        // Validate assigned_to if provided
+        if (assigned_to !== undefined) {
+          const allowedAssignees = ['productmanager', 'programmanager', 'developer', 'tester', 'architect'];
+          if (!allowedAssignees.includes(assigned_to)) {
+            return {
+              content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+              isError: true
+            };
+          }
+        }
 
         // Get current page data
         const currentPage = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);

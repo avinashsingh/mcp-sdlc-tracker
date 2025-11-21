@@ -1028,9 +1028,9 @@ server.registerTool(
     description: 'Create multiple user stories in the SDLC tracker',
      inputSchema: {
        user_stories: z.array(z.object({
-         epic_id: z.number().optional(),
+         epic_id: z.number(),
          title: z.string().min(1),
-         description: z.string().optional(),
+         description: z.string(),
          acceptance_criteria: z.string().optional(),
          story_points: z.number().optional(),
          assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
@@ -1125,10 +1125,10 @@ server.registerTool(
     title: 'Create Tasks',
     description: 'Create multiple tasks in the SDLC tracker',
     inputSchema: {
-      tasks: z.array(z.object({
-        user_story_id: z.number().optional(),
-        title: z.string().min(1),
-        description: z.string().optional(),
+       tasks: z.array(z.object({
+         user_story_id: z.number(),
+         title: z.string().min(1),
+         description: z.string(),
         estimated_hours: z.number().optional(),
         assigned_to: z.enum(['architect', 'developer']).optional(),
         priority: z.enum(['low', 'medium', 'high']).optional(),
@@ -1223,17 +1223,16 @@ server.registerTool(
     title: 'Create Bugs',
     description: 'Create multiple bug reports in the SDLC tracker',
     inputSchema: {
-      bugs: z.array(z.object({
-        user_story_id: z.number().optional(),
-        task_id: z.number().optional(),
-        title: z.string().min(1),
-        description: z.string().optional(),
-        severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
-        reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
-        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
-        phase: z.string().optional(),
-        phase_status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional()
-      })).min(1)
+       bugs: z.array(z.object({
+         user_story_id: z.number(),
+         title: z.string().min(1),
+         description: z.string(),
+         severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
+         reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
+         assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+         phase: z.string().optional(),
+         phase_status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional()
+       })).min(1)
     },
     outputSchema: {
       results: z.array(z.object({
@@ -1250,14 +1249,7 @@ server.registerTool(
 
       for (const bug of bugs) {
         try {
-          // Validate that at least one parent relationship exists
-          if (!bug.user_story_id && !bug.task_id) {
-            results.push({
-              success: false,
-              error: 'Either user_story_id or task_id is required for bugs'
-            });
-            continue;
-          }
+          // user_story_id is now required for bugs
 
           // Validate user story if provided
           if (bug.user_story_id) {
@@ -1337,17 +1329,17 @@ server.registerTool(
     title: 'Create Test Cases',
     description: 'Create multiple test cases in the SDLC tracker',
     inputSchema: {
-      test_cases: z.array(z.object({
-        user_story_id: z.number().optional(),
-        title: z.string().min(1),
-        description: z.string().optional(),
-        preconditions: z.string().optional(),
-        steps: z.string().min(1),
-        expected_result: z.string().min(1),
-        assigned_to: z.enum(['tester', 'productmanager']).optional(),
-        phase: z.string().optional(),
-        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
-      })).min(1)
+       test_cases: z.array(z.object({
+         user_story_id: z.number(),
+         title: z.string().min(1),
+         description: z.string(),
+         preconditions: z.string().optional(),
+         steps: z.string().min(1),
+         expected_result: z.string().min(1),
+         assigned_to: z.enum(['tester', 'productmanager']).optional(),
+         phase: z.string().optional(),
+         phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+       })).min(1)
     },
     outputSchema: {
       results: z.array(z.object({
@@ -1643,10 +1635,15 @@ server.registerTool(
         conditions.push('e.archived = 0');
       }
 
-      if (status) {
-        conditions.push('e.status = ?');
-        params.push(status);
-      }
+       if (user_story_id) {
+         conditions.push('user_story_id = ?');
+         params.push(user_story_id);
+       }
+
+       if (status) {
+         conditions.push('status = ?');
+         params.push(status);
+       }
 
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(' AND ')}`;
@@ -1829,11 +1826,14 @@ server.registerTool(
   'list_tasks',
   {
     title: 'List Tasks',
-    description: 'List tasks with optional filtering',
+    description: 'List tasks with optional filtering including dependency relationships',
     inputSchema: {
       user_story_id: z.number().optional(),
       status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
       assigned_to: z.enum(['architect', 'developer']).optional(),
+      depends_on: z.number().optional(), // Filter tasks that depend on this task ID
+      depended_by: z.number().optional(), // Filter tasks that are depended on by this task ID
+      has_dependencies: z.boolean().optional(), // Filter tasks that have any dependencies (true) or no dependencies (false)
       limit: z.number().default(50)
     },
     outputSchema: {
@@ -1842,7 +1842,7 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ user_story_id, status, assigned_to, limit = 50 }) => {
+  async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, limit = 50 }) => {
     try {
       const database = getDatabase();
 
@@ -1920,6 +1920,7 @@ server.registerTool(
     title: 'List Bugs',
     description: 'List bugs with optional filtering by status, severity, reporter, assignee',
     inputSchema: {
+      user_story_id: z.number().optional(),
       status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional(),
       severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
       reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
@@ -1927,12 +1928,24 @@ server.registerTool(
       limit: z.number().default(50)
     },
     outputSchema: {
-      data: z.array(z.any()),
+      data: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        task_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        severity: z.string(),
+        status: z.string(),
+        reported_by: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
       total_count: z.number(),
       filtered_count: z.number()
     }
   },
-  async ({ status, severity, reported_by, assigned_to, limit = 50 }) => {
+  async ({ user_story_id, status, severity, reported_by, assigned_to, limit = 50 }) => {
     try {
       const database = getDatabase();
 
@@ -2003,39 +2016,81 @@ server.registerTool(
     title: 'List Test Cases',
     description: 'List test cases with optional filtering by status, assignee',
     inputSchema: {
+      user_story_id: z.number().optional(),
       status: z.enum(['New', 'Passed', 'Failed']).optional(),
       assigned_to: z.enum(['tester', 'productmanager']).optional(),
       limit: z.number().default(50)
     },
     outputSchema: {
-      data: z.array(z.any()),
+      data: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        preconditions: z.string().nullable(),
+        steps: z.string(),
+        expected_result: z.string(),
+        status: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
       total_count: z.number(),
       filtered_count: z.number()
     }
   },
-  async ({ status, assigned_to, limit = 50 }) => {
+  async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, limit = 50 }) => {
     try {
       const database = getDatabase();
 
-      let query = `SELECT * FROM test_cases`;
+      let query = `SELECT DISTINCT t.* FROM tasks t`;
       const conditions = [];
       const params = [];
 
+      if (user_story_id) {
+        conditions.push('t.user_story_id = ?');
+        params.push(user_story_id);
+      }
+
       if (status) {
-        conditions.push('status = ?');
+        conditions.push('t.status = ?');
         params.push(status);
       }
 
       if (assigned_to) {
-        conditions.push('assigned_to = ?');
+        conditions.push('t.assigned_to = ?');
         params.push(assigned_to);
+      }
+
+      // Dependency filtering
+      if (depends_on) {
+        // Filter tasks that depend on the specified task ID
+        query += ` INNER JOIN task_dependencies td ON t.id = td.dependent_task_id AND td.dependency_task_id = ?`;
+        params.push(depends_on);
+      }
+
+      if (depended_by) {
+        // Filter tasks that are depended on by the specified task ID
+        query += ` INNER JOIN task_dependencies td2 ON t.id = td2.dependency_task_id AND td2.dependent_task_id = ?`;
+        params.push(depended_by);
+      }
+
+      if (has_dependencies !== undefined) {
+        if (has_dependencies) {
+          // Filter tasks that have any dependencies (either as dependent or dependency)
+          query += ` INNER JOIN task_dependencies td3 ON (t.id = td3.dependent_task_id OR t.id = td3.dependency_task_id)`;
+        } else {
+          // Filter tasks that have no dependencies
+          query += ` LEFT JOIN task_dependencies td3 ON (t.id = td3.dependent_task_id OR t.id = td3.dependency_task_id)`;
+          conditions.push('td3.dependency_task_id IS NULL');
+        }
       }
 
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      query += ` ORDER BY created_at DESC LIMIT ?`;
+      query += ` ORDER BY t.created_at DESC LIMIT ?`;
       params.push(limit);
 
       const stmt = database.prepare(query);
@@ -2077,7 +2132,7 @@ server.registerTool(
       entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
       entity_id: z.number(),
       status: z.string().optional(),
-      assigned_to: z.enum(['productmanager', 'programmanager', 'architect', 'developer', 'tester']).optional(),
+      assigned_to: z.string().optional(),
       phase: z.string().optional(),
       phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional()
     },
@@ -2122,6 +2177,14 @@ server.registerTool(
       }
 
       if (assigned_to !== undefined) {
+        // Validate assigned_to is one of the allowed values
+        const allowedAssignees = ['productmanager', 'programmanager', 'architect', 'developer', 'tester'];
+        if (!allowedAssignees.includes(assigned_to)) {
+          return {
+            content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+            isError: true
+          };
+        }
         updateFields.push('assigned_to = ?');
         updateValues.push(assigned_to);
       }
