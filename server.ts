@@ -1724,7 +1724,8 @@ server.registerTool(
       status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
       assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
       include_archived: z.boolean().default(false),
-      limit: z.number().default(50)
+      limit: z.number().default(50),
+      dependencies_resolved: z.boolean().optional()
     },
     outputSchema: {
       data: z.array(z.object({
@@ -1748,13 +1749,14 @@ server.registerTool(
         test_case_count: z.number(),
         comment_count: z.number(),
         dependencies: z.array(z.number()),
-        dependent_stories: z.array(z.number())
+        dependent_stories: z.array(z.number()),
+        dependencies_resolved: z.boolean()
       })),
       total_count: z.number(),
       filtered_count: z.number()
     }
   },
-  async ({ epic_id, status, assigned_to, include_archived = false, limit = 50 }) => {
+  async ({ epic_id, status, assigned_to, include_archived = false, limit = 50, dependencies_resolved }) => {
     try {
       const database = getDatabase();
 
@@ -1820,12 +1822,30 @@ server.registerTool(
           SELECT dependent_story_id FROM story_dependencies WHERE dependency_story_id = ?
         `).all(story.id);
         story.dependent_stories = depStoryRows.map(row => row.dependent_story_id);
+
+        // Check if all dependencies are resolved (closed)
+        if (story.dependencies.length > 0) {
+          const depStatusCheck = database.prepare(`
+            SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
+            FROM user_stories WHERE id IN (${story.dependencies.map(() => '?').join(',')})
+          `).get(...story.dependencies);
+
+          story.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
+        } else {
+          story.dependencies_resolved = true; // No dependencies means all are "resolved"
+        }
+      }
+
+      // Apply dependencies_resolved filter if specified
+      let filteredStories = user_stories;
+      if (dependencies_resolved !== undefined) {
+        filteredStories = user_stories.filter(story => story.dependencies_resolved === dependencies_resolved);
       }
 
       const output = {
-        data: convertSQLiteBooleans(user_stories),
+        data: convertSQLiteBooleans(filteredStories),
         total_count: user_stories.length,
-        filtered_count: user_stories.length
+        filtered_count: filteredStories.length
       };
 
       return {

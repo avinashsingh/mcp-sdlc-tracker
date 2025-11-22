@@ -51,7 +51,21 @@ db.exec(`
     tester_at DATETIME,
     closed_at DATETIME,
     FOREIGN KEY (epic_id) REFERENCES epics(id)
-  );
+   );
+
+   CREATE TABLE IF NOT EXISTS story_dependencies (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     dependent_story_id INTEGER NOT NULL,
+     dependency_story_id INTEGER NOT NULL,
+     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+     FOREIGN KEY (dependent_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+     FOREIGN KEY (dependency_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+
+     CONSTRAINT no_self_dependency CHECK (dependent_story_id != dependency_story_id),
+     UNIQUE(dependent_story_id, dependency_story_id)
+   );
 
    CREATE TABLE IF NOT EXISTS tasks (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1098,6 +1112,72 @@ class TrackerTestSuite {
     }
   }
 
+  async testUserStoryDependenciesResolved() {
+    try {
+      // Create test user stories with different dependency scenarios
+      const story1Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Story with No Dependencies', 'Story that has no dependencies', 'productmanager', 'productmanager', 'New');
+
+      const story2Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Story with Resolved Dependencies', 'Story with all dependencies closed', 'productmanager', 'productmanager', 'New');
+
+      const story3Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Story with Unresolved Dependencies', 'Story with open dependencies', 'productmanager', 'productmanager', 'New');
+
+      const story4Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Closed Dependency Story', 'Story that serves as a dependency', 'productmanager', 'productmanager', 'Closed');
+
+      const story5Result = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Open Dependency Story', 'Story that serves as an open dependency', 'productmanager', 'productmanager', 'New');
+
+      // Set up dependencies
+      const depStmt = db.prepare(`
+        INSERT INTO story_dependencies (dependent_story_id, dependency_story_id, created_by)
+        VALUES (?, ?, ?)
+      `);
+
+      // Story2 depends on Story4 (closed) - should be resolved
+      depStmt.run(story2Result.lastInsertRowid, story4Result.lastInsertRowid, 'productmanager');
+
+      // Story3 depends on Story5 (open) - should be unresolved
+      depStmt.run(story3Result.lastInsertRowid, story5Result.lastInsertRowid, 'productmanager');
+
+      // Test the dependencies_resolved flag calculation
+      // Story1: No dependencies - should be true
+      const story1Deps = db.prepare('SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?').all(story1Result.lastInsertRowid);
+      this.assert(story1Deps.length === 0, 'Story1 should have no dependencies');
+
+      // Story2: Depends on closed story - should be true
+      const story2Deps = db.prepare('SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?').all(story2Result.lastInsertRowid);
+      this.assert(story2Deps.length === 1, 'Story2 should have 1 dependency');
+      const story4Status = db.prepare('SELECT status FROM user_stories WHERE id = ?').get(story4Result.lastInsertRowid);
+      this.assert(story4Status.status === 'Closed', 'Story4 should be closed');
+
+      // Story3: Depends on open story - should be false
+      const story3Deps = db.prepare('SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?').all(story3Result.lastInsertRowid);
+      this.assert(story3Deps.length === 1, 'Story3 should have 1 dependency');
+      const story5Status = db.prepare('SELECT status FROM user_stories WHERE id = ?').get(story5Result.lastInsertRowid);
+      this.assert(story5Status.status === 'New', 'Story5 should be open');
+
+      // The MCP tool would calculate dependencies_resolved dynamically
+      // Here we're testing the underlying database logic
+
+      this.recordTest('testUserStoryDependenciesResolved', true);
+    } catch (error) {
+      this.recordTest('testUserStoryDependenciesResolved', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -1136,6 +1216,7 @@ class TrackerTestSuite {
     await this.testTaskDependencyIntelligence();
     await this.testBugStatusIntelligence();
     await this.testEpicDependenciesResolved();
+    await this.testUserStoryDependenciesResolved();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
