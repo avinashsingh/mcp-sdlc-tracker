@@ -1550,7 +1550,389 @@ server.registerTool(
   }
 );
 
+// Tool: List Epics
+server.registerTool(
+  'list_epics',
+  {
+    title: 'List Epics',
+    description: 'List epics with optional status filtering (excludes archived by default)',
+    inputSchema: {
+      status: z.enum(['New', 'Open', 'Closed']).optional(),
+      include_archived: z.boolean().default(false),
+      limit: z.number().default(50),
+      dependencies_resolved: z.boolean().optional()
+    },
+    outputSchema: {
+      data: z.array(z.object({
+        id: z.number(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        created_by: z.string(),
+        owner: z.string(),
+        assigned_to: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string(),
+        archived: z.boolean(),
+        user_story_count: z.number(),
+        comment_count: z.number(),
+        dependencies: z.array(z.number()),
+        dependent_epics: z.array(z.number()),
+        dependencies_resolved: z.boolean()
+      })),
+      total_count: z.number(),
+      filtered_count: z.number()
+    }
+  },
+  async ({ status, include_archived = false, limit = 50, dependencies_resolved }) => {
+    try {
+      const database = getDatabase();
 
+      let query = `
+        SELECT e.*,
+               COUNT(us.id) as user_story_count,
+               COUNT(c.id) as comment_count
+        FROM epics e
+        LEFT JOIN user_stories us ON e.id = us.epic_id
+        LEFT JOIN comments c ON c.entity_type = 'epic' AND c.entity_id = e.id
+      `;
+
+      const conditions = [];
+      const params = [];
+
+      if (!include_archived) {
+        conditions.push('e.archived = 0');
+      }
+
+      if (status) {
+        conditions.push('status = ?');
+        params.push(status);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += `
+        GROUP BY e.id
+        ORDER BY e.created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit);
+
+      const stmt = database.prepare(query);
+      const epics = stmt.all(...params);
+
+      // Add dependency information to each epic
+      for (const epic of epics) {
+        // Get dependencies (epics this epic depends on)
+        const depRows = database.prepare(`
+          SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+        `).all(epic.id);
+        epic.dependencies = depRows.map(row => row.dependency_epic_id);
+
+        // Get dependent epics (epics that depend on this epic)
+        const depEpicRows = database.prepare(`
+          SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
+        `).all(epic.id);
+        epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
+
+        // Check if all dependencies are resolved (closed)
+        if (epic.dependencies.length > 0) {
+          const depStatusCheck = database.prepare(`
+            SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
+            FROM epics WHERE id IN (${epic.dependencies.map(() => '?').join(',')})
+          `).get(...epic.dependencies);
+
+          epic.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
+        } else {
+          epic.dependencies_resolved = true; // No dependencies means all are "resolved"
+        }
+      }
+
+      // Apply dependencies_resolved filter if specified
+      let filteredEpics = epics;
+      if (dependencies_resolved !== undefined) {
+        filteredEpics = epics.filter(epic => epic.dependencies_resolved === dependencies_resolved);
+      }
+
+      const output = {
+        data: convertSQLiteBooleans(filteredEpics),
+        total_count: epics.length,
+        filtered_count: filteredEpics.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing epics: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: List User Stories
+server.registerTool(
+  'list_user_stories',
+  {
+    title: 'List User Stories',
+    description: 'List user stories with filtering by epic, status, assignee, or dependencies_resolved status (excludes archived by default)',
+    inputSchema: {
+      epic_id: z.number().optional(),
+      status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
+      assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
+      include_archived: z.boolean().default(false),
+      limit: z.number().default(50),
+      dependencies_resolved: z.boolean().optional()
+    },
+    outputSchema: {
+      data: z.array(z.object({
+        id: z.number(),
+        epic_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        acceptance_criteria: z.string().nullable(),
+        status: z.string(),
+        created_by: z.string(),
+        current_owner: z.string(),
+        assigned_to: z.string().nullable(),
+        story_points: z.number().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string(),
+        archived: z.boolean(),
+        task_count: z.number(),
+        bug_count: z.number(),
+        test_case_count: z.number(),
+        comment_count: z.number(),
+        dependencies: z.array(z.number()),
+        dependent_stories: z.array(z.number()),
+        dependencies_resolved: z.boolean()
+      })),
+      total_count: z.number(),
+      filtered_count: z.number()
+    }
+  },
+  async ({ epic_id, status, assigned_to, include_archived = false, limit = 50, dependencies_resolved }) => {
+    try {
+      const database = getDatabase();
+
+      let query = `
+        SELECT us.*,
+               COUNT(t.id) as task_count,
+               COUNT(b.id) as bug_count,
+               COUNT(tc.id) as test_case_count,
+               COUNT(c.id) as comment_count
+        FROM user_stories us
+        LEFT JOIN tasks t ON us.id = t.user_story_id
+        LEFT JOIN bugs b ON us.id = b.user_story_id
+        LEFT JOIN test_cases tc ON us.id = tc.user_story_id
+        LEFT JOIN comments c ON c.entity_type = 'user_story' AND c.entity_id = us.id
+      `;
+
+      const conditions = [];
+      const params = [];
+
+      if (!include_archived) {
+        conditions.push('us.archived = 0');
+      }
+
+      if (epic_id) {
+        conditions.push('us.epic_id = ?');
+        params.push(epic_id);
+      }
+
+      if (status) {
+        conditions.push('us.status = ?');
+        params.push(status);
+      }
+
+      if (assigned_to) {
+        conditions.push('us.assigned_to = ?');
+        params.push(assigned_to);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += `
+        GROUP BY us.id
+        ORDER BY us.created_at DESC
+        LIMIT ?
+      `;
+      params.push(limit);
+
+      const stmt = database.prepare(query);
+      const user_stories = stmt.all(...params);
+
+      // Add dependency information to each user story
+      for (const story of user_stories) {
+        // Get dependencies (stories this story depends on)
+        const depRows = database.prepare(`
+          SELECT dependency_story_id FROM story_dependencies WHERE dependent_story_id = ?
+        `).all(story.id);
+        story.dependencies = depRows.map(row => row.dependency_story_id);
+
+        // Get dependent stories (stories that depend on this story)
+        const depStoryRows = database.prepare(`
+          SELECT dependent_story_id FROM story_dependencies WHERE dependency_story_id = ?
+        `).all(story.id);
+        story.dependent_stories = depStoryRows.map(row => row.dependent_story_id);
+
+        // Check if all dependencies are resolved (closed)
+        if (story.dependencies.length > 0) {
+          const depStatusCheck = database.prepare(`
+            SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
+            FROM user_stories WHERE id IN (${story.dependencies.map(() => '?').join(',')})
+          `).get(...story.dependencies);
+
+          story.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
+        } else {
+          story.dependencies_resolved = true; // No dependencies means all are "resolved"
+        }
+      }
+
+      // Apply dependencies_resolved filter if specified
+      let filteredStories = user_stories;
+      if (dependencies_resolved !== undefined) {
+        filteredStories = user_stories.filter(story => story.dependencies_resolved === dependencies_resolved);
+      }
+
+      const output = {
+        data: convertSQLiteBooleans(filteredStories),
+        total_count: user_stories.length,
+        filtered_count: filteredStories.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing user stories: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: List Tasks
+server.registerTool(
+  'list_tasks',
+  {
+    title: 'List Tasks',
+    description: 'List tasks with optional filtering by user story, status, assignee, dependency relationships, and dependencies_resolved status',
+    inputSchema: {
+      user_story_id: z.number().optional(),
+      status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
+      assigned_to: z.enum(['architect', 'developer']).optional(),
+      depends_on: z.number().optional(), // Filter tasks that depend on this task ID
+      depended_by: z.number().optional(), // Filter tasks that are depended on by this task ID
+      has_dependencies: z.boolean().optional(), // Filter tasks that have (true) or don't have (false) any dependencies
+      dependencies_resolved: z.boolean().optional(), // Filter tasks by dependency resolution status
+      limit: z.number().default(50)
+    },
+    outputSchema: {
+      data: z.array(z.any()),
+      total_count: z.number(),
+      filtered_count: z.number()
+    }
+  },
+  async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
+    try {
+      const database = getDatabase();
+
+      let query = `SELECT * FROM tasks`;
+      const conditions = [];
+      const params = [];
+
+      if (user_story_id) {
+        conditions.push('user_story_id = ?');
+        params.push(user_story_id);
+      }
+
+      if (status) {
+        conditions.push('status = ?');
+        params.push(status);
+      }
+
+      if (assigned_to) {
+        conditions.push('assigned_to = ?');
+        params.push(assigned_to);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ` ORDER BY created_at DESC LIMIT ?`;
+      params.push(limit);
+
+      const stmt = database.prepare(query);
+      const tasks = stmt.all(...params);
+
+      // Add comment count and dependency information to each task
+      for (const task of tasks) {
+        task.comment_count = database.prepare(`
+          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
+        `).get(task.id).count;
+
+        // Get dependencies (tasks this task depends on)
+        const depRows = database.prepare(`
+          SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?
+        `).all(task.id);
+        task.dependencies = depRows.map(row => row.dependency_task_id);
+
+        // Get dependent tasks (tasks that depend on this task)
+        const depTaskRows = database.prepare(`
+          SELECT dependent_task_id FROM task_dependencies WHERE dependency_task_id = ?
+        `).all(task.id);
+        task.dependent_tasks = depTaskRows.map(row => row.dependent_task_id);
+
+        // Check if all dependencies are resolved (closed)
+        if (task.dependencies.length > 0) {
+          const depStatusCheck = database.prepare(`
+            SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
+            FROM tasks WHERE id IN (${task.dependencies.map(() => '?').join(',')})
+          `).get(...task.dependencies);
+
+          task.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
+        } else {
+          task.dependencies_resolved = true; // No dependencies means all are "resolved"
+        }
+      }
+
+      // Apply dependencies_resolved filter if specified
+      let filteredTasks = tasks;
+      if (dependencies_resolved !== undefined) {
+        filteredTasks = tasks.filter(task => task.dependencies_resolved === dependencies_resolved);
+      }
+
+      const output = {
+        data: convertSQLiteBooleans(filteredTasks),
+        total_count: tasks.length,
+        filtered_count: filteredTasks.length
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
 
 // Tool: Manage Story Dependencies
 server.registerTool(
