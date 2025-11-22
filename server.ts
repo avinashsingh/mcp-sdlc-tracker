@@ -2333,6 +2333,43 @@ server.registerTool(
             }
           }
         }
+
+        // Check for dependent tasks that can now start
+        const dependentTasks = database.prepare(`
+          SELECT dependent_task_id FROM task_dependencies WHERE dependency_task_id = ?
+        `).all(entity_id);
+
+        for (const dep of dependentTasks) {
+          const dependentTaskId = dep.dependent_task_id;
+
+          // Get the dependent task details
+          const dependentTask = database.prepare(`
+            SELECT status, title FROM tasks WHERE id = ?
+          `).get(dependentTaskId);
+
+          if (dependentTask && dependentTask.status === 'New') {
+            // Check if all dependencies of this dependent task are now closed
+            const allDepsResult = database.prepare(`
+              SELECT
+                COUNT(*) as total_deps,
+                COUNT(CASE WHEN t.status = 'Closed' THEN 1 END) as closed_deps
+              FROM task_dependencies td
+              JOIN tasks t ON td.dependency_task_id = t.id
+              WHERE td.dependent_task_id = ?
+            `).get(dependentTaskId);
+
+            if (allDepsResult.total_deps > 0 &&
+                allDepsResult.total_deps === allDepsResult.closed_deps) {
+              workflow_suggestions.push({
+                entity_type: 'task',
+                entity_id: dependentTaskId,
+                suggested_action: 'start_task',
+                reason: `All dependencies for task "${dependentTask.title}" are now completed`,
+                suggested_status: 'In Progress'
+              });
+            }
+          }
+        }
       }
 
       const output = {

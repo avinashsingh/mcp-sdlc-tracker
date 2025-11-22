@@ -862,6 +862,101 @@ class TrackerTestSuite {
     }
   }
 
+  async testTaskDependencyIntelligence() {
+    try {
+      // Create a user story
+      const storyResult = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Task Dependency Intelligence Test Story', 'Story for testing task dependency intelligence', 'architect', 'productmanager', 'architect');
+
+      // Create Task A (dependency)
+      const taskAResult = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task A', 'Dependency task', 'architect', 'architect', 'architect', 'In Progress');
+
+      // Create Task B (depends on Task A)
+      const taskBResult = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task B', 'Dependent task', 'architect', 'architect', 'architect', 'New');
+
+      // Create Task C (also depends on Task A)
+      const taskCResult = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task C', 'Another dependent task', 'architect', 'architect', 'architect', 'New');
+
+      // Create Task D (depends on Task B - should not be affected)
+      const taskDResult = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task D', 'Depends on Task B', 'architect', 'architect', 'architect', 'New');
+
+      // Set up dependencies: Task B and Task C depend on Task A, Task D depends on Task B
+      const depStmt = db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `);
+      depStmt.run(taskBResult.lastInsertRowid, taskAResult.lastInsertRowid, 'architect'); // B depends on A
+      depStmt.run(taskCResult.lastInsertRowid, taskAResult.lastInsertRowid, 'architect'); // C depends on A
+      depStmt.run(taskDResult.lastInsertRowid, taskBResult.lastInsertRowid, 'architect'); // D depends on B
+
+      // Verify initial state
+      const taskB = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskBResult.lastInsertRowid) as { status: string };
+      const taskC = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskCResult.lastInsertRowid) as { status: string };
+      const taskD = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskDResult.lastInsertRowid) as { status: string };
+
+      this.assert(taskB.status === 'New', 'Task B should start as New');
+      this.assert(taskC.status === 'New', 'Task C should start as New');
+      this.assert(taskD.status === 'New', 'Task D should start as New');
+
+      // Close Task A - this should trigger suggestions for Task B and Task C
+      const updateStmt = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      updateStmt.run('Closed', taskAResult.lastInsertRowid);
+
+      // Verify Task A is closed
+      const taskAClosed = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskAResult.lastInsertRowid) as { status: string };
+      this.assert(taskAClosed.status === 'Closed', 'Task A should be closed');
+
+      // The workflow intelligence would be triggered in the MCP tool, but here we're testing the database logic
+      // In a real scenario, the MCP tool would check this and return workflow_suggestions for Task B and Task C
+
+      // Verify that Task B and Task C still have their dependencies satisfied (all deps closed)
+      const taskBDeps = db.prepare(`
+        SELECT COUNT(*) as total, COUNT(CASE WHEN t.status = 'Closed' THEN 1 END) as closed
+        FROM task_dependencies td
+        JOIN tasks t ON td.dependency_task_id = t.id
+        WHERE td.dependent_task_id = ?
+      `).get(taskBResult.lastInsertRowid) as { total: number; closed: number };
+
+      const taskCDeps = db.prepare(`
+        SELECT COUNT(*) as total, COUNT(CASE WHEN t.status = 'Closed' THEN 1 END) as closed
+        FROM task_dependencies td
+        JOIN tasks t ON td.dependency_task_id = t.id
+        WHERE td.dependent_task_id = ?
+      `).get(taskCResult.lastInsertRowid) as { total: number; closed: number };
+
+      this.assert(taskBDeps.total === 1 && taskBDeps.closed === 1, 'Task B should have all dependencies satisfied');
+      this.assert(taskCDeps.total === 1 && taskCDeps.closed === 1, 'Task C should have all dependencies satisfied');
+
+      // Task D should NOT have all dependencies satisfied (Task B is still New)
+      const taskDDeps = db.prepare(`
+        SELECT COUNT(*) as total, COUNT(CASE WHEN t.status = 'Closed' THEN 1 END) as closed
+        FROM task_dependencies td
+        JOIN tasks t ON td.dependency_task_id = t.id
+        WHERE td.dependent_task_id = ?
+      `).get(taskDResult.lastInsertRowid) as { total: number; closed: number };
+
+      this.assert(taskDDeps.total === 1 && taskDDeps.closed === 0, 'Task D should NOT have all dependencies satisfied');
+
+      this.recordTest('testTaskDependencyIntelligence', true);
+    } catch (error) {
+      this.recordTest('testTaskDependencyIntelligence', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -897,6 +992,7 @@ class TrackerTestSuite {
     await this.testForeignKeyConstraints();
     await this.testPhaseFunctionality();
     await this.testWorkflowIntelligence();
+    await this.testTaskDependencyIntelligence();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
