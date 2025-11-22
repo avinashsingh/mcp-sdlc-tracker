@@ -1293,7 +1293,7 @@ server.registerTool(
         // Define allowed transitions
         const allowedTransitions = {
           'Open': ['In Progress'],
-          'In Progress': ['Review', 'Fixed'],
+          'In Progress': ['Review'], // Must go through Review, cannot jump to Fixed
           'Review': ['In Progress', 'Fixed'],
           'Fixed': ['In Progress', 'Closed'],
           'Closed': [] // No transitions from Closed

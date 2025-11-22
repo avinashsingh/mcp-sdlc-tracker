@@ -1258,28 +1258,26 @@ class TrackerTestSuite {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run('Bug Status Transition Test', 'Testing bug status transitions', 'High', 'tester', 'developer', 'developer', 'developer', 'Open');
 
-      // Test 1: Open -> In Progress (should work)
+      // Test valid transitions through the proper workflow
       const updateStmt = db.prepare('UPDATE bugs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-      updateStmt.run('In Progress', bug1Result.lastInsertRowid);
 
+      // Test 1: Open -> In Progress (should work)
+      updateStmt.run('In Progress', bug1Result.lastInsertRowid);
       let bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
       this.assert(bugStatus.status === 'In Progress', 'Bug should transition from Open to In Progress');
 
-      // Test 2: In Progress -> Review (should work)
+      // Test 2: In Progress -> Review (should work - required step)
       updateStmt.run('Review', bug1Result.lastInsertRowid);
-
       bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
       this.assert(bugStatus.status === 'Review', 'Bug should transition from In Progress to Review');
 
       // Test 3: Review -> Fixed (should work)
       updateStmt.run('Fixed', bug1Result.lastInsertRowid);
-
       bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
       this.assert(bugStatus.status === 'Fixed', 'Bug should transition from Review to Fixed');
 
       // Test 4: Fixed -> Closed (should work)
       updateStmt.run('Closed', bug1Result.lastInsertRowid);
-
       bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
       this.assert(bugStatus.status === 'Closed', 'Bug should transition from Fixed to Closed');
 
