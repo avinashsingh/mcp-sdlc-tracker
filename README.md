@@ -26,12 +26,14 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 ### Epic Management
 - `create_epics`: Create multiple epics with title, description, and productmanager assignment
 - `list_epics`: List epics with optional status filtering (excludes archived by default)
+  - `dependencies_resolved`: Filter epics by dependency resolution status (true/false)
 - `update_epic`: Update epic title, description, status, assignment, and phases
 - `archive_epic`: Archive epics (product managers only)
 
 ### User Story Management
 - `create_user_stories`: Create multiple user stories with epic association, acceptance criteria, and story points
 - `list_user_stories`: List user stories with filtering by epic, status, or assignee (excludes archived by default)
+  - `dependencies_resolved`: Filter user stories by dependency resolution status (true/false)
 - `update_user_story_content`: Update user story title, description, and story points (all stakeholders)
 - `update_user_story_acceptance_criteria`: Update user story acceptance criteria (product managers only)
 - `archive_user_story`: Archive user stories (product managers only)
@@ -42,6 +44,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
   - `depends_on`: Filter tasks that depend on a specific task ID
   - `depended_by`: Filter tasks that are depended on by a specific task ID
   - `has_dependencies`: Filter tasks that have (true) or don't have (false) any dependencies
+  - `dependencies_resolved`: Filter tasks by dependency resolution status (true/false)
 
 ### Bug Tracking
 - `create_bugs`: Create multiple bug reports with severity levels, reporter, and assignee information
@@ -58,13 +61,21 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `manage_task_dependencies`: Add or remove dependencies for multiple tasks in bulk (tasks must belong to same user story)
 
 #### Intelligent Workflow Suggestions
-The system provides intelligent workflow guidance when tasks are completed:
+The system provides intelligent workflow guidance across the entire SDLC:
 
 - **Task Closure Intelligence**: When a task is moved to "Closed" status, the system automatically checks if all tasks in the user story are now closed
 - **User Story Advancement**: If all tasks are closed and the user story is not already in QA/UAT/Closed status, the system suggests moving the user story to "QA" status
+- **Task Dependency Intelligence**: When a task is closed, the system checks for dependent tasks and suggests moving them to "In Progress" if all their dependencies are satisfied
+- **Bug Status Intelligence**: When bugs change status, the system provides targeted suggestions:
+  - "Fixed" bugs: Suggest QA verification
+  - "Closed" bugs: Check if regression tests exist, suggest creating if missing
+  - "Open" bugs: Suggest developer reassignment if assigned to tester
+- **User Story Validation**: Prevents moving user stories to "In Progress" without acceptance criteria and test cases
 - **Proactive Guidance**: Helps teams maintain proper SDLC workflow without manual tracking
 
-**Example Response:**
+**Example Responses:**
+
+*Task Dependency Intelligence:*
 ```json
 {
   "success": true,
@@ -74,13 +85,47 @@ The system provides intelligent workflow guidance when tasks are completed:
   "new_status": "Closed",
   "workflow_suggestions": [
     {
-      "entity_type": "user_story",
-      "entity_id": 2,
-      "suggested_action": "move_to_qa",
-      "reason": "All 3 tasks in this user story are now closed",
-      "suggested_status": "QA"
+      "entity_type": "task",
+      "entity_id": 7,
+      "suggested_action": "start_task",
+      "reason": "All dependencies for task \"Implement API\" are now completed",
+      "suggested_status": "In Progress"
     }
   ]
+}
+```
+
+*Bug Status Intelligence:*
+```json
+{
+  "success": true,
+  "entity_type": "bug",
+  "entity_id": 3,
+  "old_status": "In Progress",
+  "new_status": "Fixed",
+  "workflow_suggestions": [
+    {
+      "entity_type": "bug",
+      "entity_id": 3,
+      "suggested_action": "qa_verification",
+      "reason": "Bug has been marked as fixed and should be verified by QA",
+      "suggested_status": "In Progress"
+    }
+  ]
+}
+```
+
+*User Story Validation:*
+```json
+{
+  "content": ["Please ask product manager to add acceptance criteria"],
+  "structuredContent": {
+    "success": false,
+    "entity_type": "user_story",
+    "entity_id": 1,
+    "error": "Please ask product manager to add acceptance criteria"
+  },
+  "isError": true
 }
 ```
 
@@ -289,6 +334,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `archived`: Boolean flag for soft deletion
 - `dependencies`: Array of epic IDs this epic depends on
 - `dependent_epics`: Array of epic IDs that depend on this epic
+- `dependencies_resolved`: Boolean indicating if all dependencies are 'Closed'
 - `comment_count`: Number of comments on this epic
 
 #### User Stories Table
@@ -306,6 +352,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `archived`: Boolean flag for soft deletion
 - `dependencies`: Array of story IDs this story depends on
 - `dependent_stories`: Array of story IDs that depend on this story
+- `dependencies_resolved`: Boolean indicating if all dependencies are 'Closed'
 - `comment_count`: Number of comments on this story
 
 #### Tasks Table
@@ -319,6 +366,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/closed_at`: Timestamps
+- `dependencies_resolved`: Boolean indicating if all dependencies are 'Closed'
 - `comment_count`: Number of comments on this task
 
 #### Bugs Table
@@ -327,7 +375,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.db` in th
 - `title`: Bug title (required)
 - `description`: Bug description (optional)
 - `severity`: Severity level ('Critical', 'High', 'Medium', 'Low')
-- `status`: Status ('Open', 'In Progress', 'Fixed', 'Closed')
+- `status`: Status ('Open', 'In Progress', 'Review', 'Fixed', 'Closed')
 - `reported_by/assigned_to/created_by/current_owner`: Stakeholder assignments (enum)
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'Open')
@@ -415,8 +463,10 @@ The server implements a complete Software Development Lifecycle with proper stak
 ### Entity States & Transitions
 - **Epics**: New → Open → Closed (owned by productmanager)
 - **User Stories**: New → In Progress → QA → UAT → Closed (productmanager → architect → developer → tester → productmanager)
+  - **Validation**: Cannot move to 'In Progress' without acceptance criteria and test cases
 - **Tasks**: New → In Progress → Review → Closed (architect → developer → architect)
-- **Bugs**: Open → In Progress → Fixed → Closed (any stakeholder can be involved)
+- **Bugs**: Open → In Progress → Review → Fixed → Closed (any stakeholder can be involved)
+  - **Validation**: 'Review' can only be set from 'In Progress', cannot jump directly to 'Fixed'
 - **Test Cases**: New, Passed, Failed (tester → productmanager → tester)
 
 ### Stakeholders
@@ -449,6 +499,13 @@ Tasks can have dependencies on other tasks within the same user story to model t
 - **Bulk Management**: Add/remove dependencies for multiple tasks in single operations
 - **Visual Indicators**: Dependency counts shown in UI with clickable links
 - **API Support**: Full MCP API support for task dependency management
+
+### Dependencies Resolved Status
+All list operations (`list_epics`, `list_user_stories`, `list_tasks`) include a `dependencies_resolved` boolean field that indicates whether all dependencies of an entity are in 'Closed' status:
+- **Dynamic Calculation**: Computed in real-time when listing entities
+- **Filtering Support**: All list operations support `dependencies_resolved` filter parameter
+- **Workflow Visibility**: Helps teams identify entities ready for work
+- **API Integration**: Available in both MCP tools and REST API endpoints
 
 ### Phase Management
 Entities can be assigned to custom phases for project organization:
@@ -538,6 +595,15 @@ Once connected to an MCP client, you can:
 13. "Update user story 1 status to 'In Progress' transitioned by architect"
 14. "Update task 1 status to 'Closed' transitioned by developer"
 
+### Dependencies Resolved Filtering
+15. "List epics with all dependencies resolved"
+16. "List user stories that have unresolved dependencies"
+17. "List tasks ready to start (dependencies resolved)"
+
+### Bug Status Management
+18. "Update bug 1 status to 'Review' (must come from 'In Progress')"
+19. "Update bug 2 status to 'Fixed' (triggers QA verification suggestion)"
+
 ## Testing
 
 The project includes comprehensive test suites:
@@ -583,6 +649,10 @@ The server is written in TypeScript and uses:
 - **Foreign Key Validation**: All entity references are validated before database operations
 - **Consistent API Responses**: All list tools now use standardized response format
 - **Improved Data Integrity**: Better constraint checking and error reporting
+- **Dependencies Resolved Status**: Dynamic calculation and filtering for epic, user story, and task dependencies
+- **Bug Status Enhancement**: Added 'Review' status with strict transition validation (In Progress → Review → Fixed)
+- **Advanced Workflow Intelligence**: Task dependency suggestions, bug status intelligence, and user story validation
+- **Enhanced Filtering**: dependencies_resolved filter parameter across all list operations
 
 ## License
 
