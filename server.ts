@@ -2127,7 +2127,7 @@ server.registerTool(
   'update_entity_status',
   {
     title: 'Update Entity Status',
-    description: 'Update status and/or assignment of any SDLC entity with audit trail recording',
+    description: 'Update entity status',
     inputSchema: {
       entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
       entity_id: z.number(),
@@ -2144,6 +2144,7 @@ server.registerTool(
       new_status: z.string().optional(),
       old_assigned_to: z.string().nullable().optional(),
       new_assigned_to: z.string().nullable().optional(),
+      error: z.string().optional(),
       workflow_suggestions: z.array(z.object({
         entity_type: z.string(),
         entity_id: z.number(),
@@ -2151,7 +2152,8 @@ server.registerTool(
         reason: z.string(),
         suggested_status: z.string()
       })).optional()
-    },
+    }
+  },
   async ({ entity_type, entity_id, status, assigned_to, phase, phase_status }) => {
     try {
       const database = getDatabase();
@@ -2169,8 +2171,49 @@ server.registerTool(
       if (!currentEntity) {
         return {
           content: [{ type: 'text', text: `Entity not found` }],
+          structuredContent: {
+            success: false,
+            entity_type,
+            entity_id,
+            error: 'Entity not found'
+          },
           isError: true
         };
+      }
+
+      // Validate user story requirements when moving to "In Progress"
+      if (entity_type === 'user_story' && status === 'In Progress') {
+        // Check if acceptance criteria is present
+        if (!currentEntity.acceptance_criteria || currentEntity.acceptance_criteria.trim() === '') {
+          return {
+            content: [{ type: 'text', text: 'Please ask product manager to add acceptance criteria' }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: 'Please ask product manager to add acceptance criteria'
+            },
+            isError: true
+          };
+        }
+
+        // Check if test cases exist
+        const testCaseCount = database.prepare(`
+          SELECT COUNT(*) as count FROM test_cases WHERE user_story_id = ?
+        `).get(entity_id).count;
+
+        if (testCaseCount === 0) {
+          return {
+            content: [{ type: 'text', text: 'Please ask QA to add test cases before story can be moved to In Progress' }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: 'Please ask QA to add test cases before story can be moved to In Progress'
+            },
+            isError: true
+          };
+        }
       }
 
       // Build update query
@@ -2188,6 +2231,12 @@ server.registerTool(
         if (!allowedAssignees.includes(assigned_to)) {
           return {
             content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}`
+            },
             isError: true
           };
         }
@@ -2208,6 +2257,12 @@ server.registerTool(
       if (updateFields.length === 0) {
         return {
           content: [{ type: 'text', text: 'No fields to update' }],
+          structuredContent: {
+            success: false,
+            entity_type,
+            entity_id,
+            error: 'No fields to update'
+          },
           isError: true
         };
       }
