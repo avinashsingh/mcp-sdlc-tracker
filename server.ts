@@ -1592,7 +1592,8 @@ server.registerTool(
     inputSchema: {
       status: z.enum(['New', 'Open', 'Closed']).optional(),
       include_archived: z.boolean().default(false),
-      limit: z.number().default(50)
+      limit: z.number().default(50),
+      dependencies_resolved: z.boolean().optional()
     },
     outputSchema: {
       data: z.array(z.object({
@@ -1609,13 +1610,14 @@ server.registerTool(
         user_story_count: z.number(),
         comment_count: z.number(),
         dependencies: z.array(z.number()),
-        dependent_epics: z.array(z.number())
+        dependent_epics: z.array(z.number()),
+        dependencies_resolved: z.boolean()
       })),
       total_count: z.number(),
       filtered_count: z.number()
     }
   },
-  async ({ status, include_archived = false, limit = 50 }) => {
+  async ({ status, include_archived = false, limit = 50, dependencies_resolved }) => {
     try {
       const database = getDatabase();
 
@@ -1659,26 +1661,44 @@ server.registerTool(
       const stmt = database.prepare(query);
       const epics = stmt.all(...params);
 
-      // Add dependency information to each epic
-      for (const epic of epics) {
-        // Get dependencies (epics this epic depends on)
-        const depRows = database.prepare(`
-          SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
-        `).all(epic.id);
-        epic.dependencies = depRows.map(row => row.dependency_epic_id);
+       // Add dependency information to each epic
+       for (const epic of epics) {
+         // Get dependencies (epics this epic depends on)
+         const depRows = database.prepare(`
+           SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?
+         `).all(epic.id);
+         epic.dependencies = depRows.map(row => row.dependency_epic_id);
 
-        // Get dependent epics (epics that depend on this epic)
-        const depEpicRows = database.prepare(`
-          SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
-        `).all(epic.id);
-        epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
-      }
+         // Get dependent epics (epics that depend on this epic)
+         const depEpicRows = database.prepare(`
+           SELECT dependent_epic_id FROM epic_dependencies WHERE dependency_epic_id = ?
+         `).all(epic.id);
+         epic.dependent_epics = depEpicRows.map(row => row.dependent_epic_id);
 
-      const output = {
-        data: convertSQLiteBooleans(epics),
-        total_count: epics.length,
-        filtered_count: epics.length
-      };
+         // Check if all dependencies are resolved (closed)
+         if (epic.dependencies.length > 0) {
+           const depStatusCheck = database.prepare(`
+             SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
+             FROM epics WHERE id IN (${epic.dependencies.map(() => '?').join(',')})
+           `).get(...epic.dependencies);
+
+           epic.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
+         } else {
+           epic.dependencies_resolved = true; // No dependencies means all are "resolved"
+         }
+       }
+
+       // Apply dependencies_resolved filter if specified
+       let filteredEpics = epics;
+       if (dependencies_resolved !== undefined) {
+         filteredEpics = epics.filter(epic => epic.dependencies_resolved === dependencies_resolved);
+       }
+
+       const output = {
+         data: convertSQLiteBooleans(filteredEpics),
+         total_count: epics.length,
+         filtered_count: filteredEpics.length
+       };
 
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],

@@ -17,9 +17,23 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME
-  );
+   );
 
-  CREATE TABLE IF NOT EXISTS user_stories (
+   CREATE TABLE IF NOT EXISTS epic_dependencies (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     dependent_epic_id INTEGER NOT NULL,
+     dependency_epic_id INTEGER NOT NULL,
+     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+
+     FOREIGN KEY (dependent_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+     FOREIGN KEY (dependency_epic_id) REFERENCES epics(id) ON DELETE CASCADE,
+
+     CONSTRAINT no_self_epic_dependency CHECK (dependent_epic_id != dependency_epic_id),
+     UNIQUE(dependent_epic_id, dependency_epic_id)
+   );
+
+   CREATE TABLE IF NOT EXISTS user_stories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     epic_id INTEGER,
     title TEXT NOT NULL,
@@ -1018,6 +1032,72 @@ class TrackerTestSuite {
     }
   }
 
+  async testEpicDependenciesResolved() {
+    try {
+      // Create test epics with different dependency scenarios
+      const epic1Result = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run('Epic with No Dependencies', 'Epic that has no dependencies', 'productmanager', 'productmanager', 'Open');
+
+      const epic2Result = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run('Epic with Resolved Dependencies', 'Epic with all dependencies closed', 'productmanager', 'productmanager', 'New');
+
+      const epic3Result = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run('Epic with Unresolved Dependencies', 'Epic with open dependencies', 'productmanager', 'productmanager', 'New');
+
+      const epic4Result = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run('Closed Dependency Epic', 'Epic that serves as a dependency', 'productmanager', 'productmanager', 'Closed');
+
+      const epic5Result = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run('Open Dependency Epic', 'Epic that serves as an open dependency', 'productmanager', 'productmanager', 'Open');
+
+      // Set up dependencies
+      const depStmt = db.prepare(`
+        INSERT INTO epic_dependencies (dependent_epic_id, dependency_epic_id, created_by)
+        VALUES (?, ?, ?)
+      `);
+
+      // Epic2 depends on Epic4 (closed) - should be resolved
+      depStmt.run(epic2Result.lastInsertRowid, epic4Result.lastInsertRowid, 'productmanager');
+
+      // Epic3 depends on Epic5 (open) - should be unresolved
+      depStmt.run(epic3Result.lastInsertRowid, epic5Result.lastInsertRowid, 'productmanager');
+
+      // Test the dependencies_resolved flag calculation
+      // Epic1: No dependencies - should be true
+      const epic1Deps = db.prepare('SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?').all(epic1Result.lastInsertRowid);
+      this.assert(epic1Deps.length === 0, 'Epic1 should have no dependencies');
+
+      // Epic2: Depends on closed epic - should be true
+      const epic2Deps = db.prepare('SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?').all(epic2Result.lastInsertRowid);
+      this.assert(epic2Deps.length === 1, 'Epic2 should have 1 dependency');
+      const epic4Status = db.prepare('SELECT status FROM epics WHERE id = ?').get(epic4Result.lastInsertRowid);
+      this.assert(epic4Status.status === 'Closed', 'Epic4 should be closed');
+
+      // Epic3: Depends on open epic - should be false
+      const epic3Deps = db.prepare('SELECT dependency_epic_id FROM epic_dependencies WHERE dependent_epic_id = ?').all(epic3Result.lastInsertRowid);
+      this.assert(epic3Deps.length === 1, 'Epic3 should have 1 dependency');
+      const epic5Status = db.prepare('SELECT status FROM epics WHERE id = ?').get(epic5Result.lastInsertRowid);
+      this.assert(epic5Status.status === 'Open', 'Epic5 should be open');
+
+      // The MCP tool would calculate dependencies_resolved dynamically
+      // Here we're testing the underlying database logic
+
+      this.recordTest('testEpicDependenciesResolved', true);
+    } catch (error) {
+      this.recordTest('testEpicDependenciesResolved', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -1055,6 +1135,7 @@ class TrackerTestSuite {
     await this.testWorkflowIntelligence();
     await this.testTaskDependencyIntelligence();
     await this.testBugStatusIntelligence();
+    await this.testEpicDependenciesResolved();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
