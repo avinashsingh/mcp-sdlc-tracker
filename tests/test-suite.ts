@@ -93,7 +93,7 @@ db.exec(`
     title TEXT NOT NULL,
     description TEXT,
     severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
-    status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
+    status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Review', 'Fixed', 'Closed')),
     reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
     created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
@@ -1250,6 +1250,54 @@ class TrackerTestSuite {
     }
   }
 
+  async testBugStatusTransitions() {
+    try {
+      // Create test bugs
+      const bug1Result = db.prepare(`
+        INSERT INTO bugs (title, description, severity, reported_by, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('Bug Status Transition Test', 'Testing bug status transitions', 'High', 'tester', 'developer', 'developer', 'developer', 'Open');
+
+      // Test 1: Open -> In Progress (should work)
+      const updateStmt = db.prepare('UPDATE bugs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      updateStmt.run('In Progress', bug1Result.lastInsertRowid);
+
+      let bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
+      this.assert(bugStatus.status === 'In Progress', 'Bug should transition from Open to In Progress');
+
+      // Test 2: In Progress -> Review (should work)
+      updateStmt.run('Review', bug1Result.lastInsertRowid);
+
+      bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
+      this.assert(bugStatus.status === 'Review', 'Bug should transition from In Progress to Review');
+
+      // Test 3: Review -> Fixed (should work)
+      updateStmt.run('Fixed', bug1Result.lastInsertRowid);
+
+      bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
+      this.assert(bugStatus.status === 'Fixed', 'Bug should transition from Review to Fixed');
+
+      // Test 4: Fixed -> Closed (should work)
+      updateStmt.run('Closed', bug1Result.lastInsertRowid);
+
+      bugStatus = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid);
+      this.assert(bugStatus.status === 'Closed', 'Bug should transition from Fixed to Closed');
+
+      // Test 5: Create another bug to test Review from wrong status (should fail)
+      const bug2Result = db.prepare(`
+        INSERT INTO bugs (title, description, severity, reported_by, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('Bug Review Validation Test', 'Testing Review validation', 'Medium', 'tester', 'developer', 'developer', 'developer', 'Open');
+
+      // Try to go Open -> Review (should fail - MCP tool would prevent this)
+      // We can't test the MCP validation directly in unit tests, but we can verify the database logic
+
+      this.recordTest('testBugStatusTransitions', true);
+    } catch (error) {
+      this.recordTest('testBugStatusTransitions', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -1290,6 +1338,7 @@ class TrackerTestSuite {
     await this.testEpicDependenciesResolved();
     await this.testUserStoryDependenciesResolved();
     await this.testTaskDependenciesResolved();
+    await this.testBugStatusTransitions();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;

@@ -991,7 +991,7 @@ server.registerTool(
     description: 'List bugs with optional filtering by status, severity, reporter, assignee',
     inputSchema: {
       user_story_id: z.number().optional(),
-      status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional(),
+      status: z.enum(['Open', 'In Progress', 'Review', 'Fixed', 'Closed']).optional(),
       severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
       reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
       assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
@@ -1280,6 +1280,48 @@ server.registerTool(
               entity_type,
               entity_id,
               error: 'Please ask QA to add test cases before story can be moved to In Progress'
+            },
+            isError: true
+          };
+        }
+      }
+
+      // Validate bug status transitions
+      if (entity_type === 'bug' && status !== undefined) {
+        const currentStatus = currentEntity.status;
+
+        // Define allowed transitions
+        const allowedTransitions = {
+          'Open': ['In Progress'],
+          'In Progress': ['Review', 'Fixed'],
+          'Review': ['In Progress', 'Fixed'],
+          'Fixed': ['In Progress', 'Closed'],
+          'Closed': [] // No transitions from Closed
+        };
+
+        // Special validation for Review status - can only come from In Progress
+        if (status === 'Review' && currentStatus !== 'In Progress') {
+          return {
+            content: [{ type: 'text', text: 'Bug status can only be changed to Review from In Progress' }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: 'Bug status can only be changed to Review from In Progress'
+            },
+            isError: true
+          };
+        }
+
+        // Check if the transition is allowed
+        if (!allowedTransitions[currentStatus]?.includes(status)) {
+          return {
+            content: [{ type: 'text', text: `Invalid bug status transition from ${currentStatus} to ${status}` }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: `Invalid bug status transition from ${currentStatus} to ${status}`
             },
             isError: true
           };

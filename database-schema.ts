@@ -72,7 +72,7 @@ export function createDatabaseSchema(database: Database): void {
       title TEXT NOT NULL,
       description TEXT,
       severity TEXT NOT NULL CHECK (severity IN ('Critical', 'High', 'Medium', 'Low')),
-      status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Fixed', 'Closed')),
+      status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open', 'In Progress', 'Review', 'Fixed', 'Closed')),
       reported_by TEXT NOT NULL CHECK (reported_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
       assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
       created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
