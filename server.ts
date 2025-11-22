@@ -894,89 +894,657 @@ server.registerTool(
       message: z.string()
     }
    },
-  async ({ task_id, user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
+  async ({ path }) => {
     try {
-      const database = getDatabase();
-
-      let query = `SELECT * FROM tasks`;
-      const conditions = [];
-      const params = [];
-
-      if (user_story_id) {
-        conditions.push('user_story_id = ?');
-        params.push(user_story_id);
+      // Validate the path
+      if (!existsSync(path)) {
+        throw new Error(`Path does not exist: ${path}`);
+      }
+      const stat = statSync(path);
+      if (!stat.isDirectory()) {
+        throw new Error(`Path is not a directory: ${path}`);
+      }
+      // Basic security check: prevent path traversal
+      if (path.includes('..') || path.includes('\0')) {
+        throw new Error(`Invalid path: ${path}`);
       }
 
-      if (status) {
-        conditions.push('status = ?');
-        params.push(status);
+      const projectDir = path;
+      const dbFilePath = `${projectDir}/.project_tracker.db`;
+
+      // Check if already initialized
+      if (isInitialized) {
+        return {
+          content: [{ type: 'text', text: 'Database already initialized' }],
+          structuredContent: {
+            success: false,
+            message: 'Database already initialized',
+            database_path: dbPath!
+          }
+        };
       }
 
-      if (assigned_to) {
-        conditions.push('assigned_to = ?');
-        params.push(assigned_to);
+      // Initialize database
+      db = new Database(dbFilePath);
+      dbPath = dbFilePath;
+
+      // Execute all CREATE TABLE statements
+      createDatabaseSchema(db);
+
+      isInitialized = true;
+
+      // Try to open browser now that database is initialized
+      if (httpPort) {
+        const url = `http://localhost:${httpPort}`;
+        setTimeout(() => tryOpenBrowser(url), 100); // Small delay to ensure server is ready
       }
-
-      if (conditions.length > 0) {
-        query += ` WHERE ${conditions.join(' AND ')}`;
-      }
-
-      query += ` ORDER BY created_at DESC LIMIT ?`;
-      params.push(limit);
-
-      const stmt = database.prepare(query);
-      const tasks = stmt.all(...params);
-
-      // Add comment count and dependency information to each task
-      for (const task of tasks) {
-        task.comment_count = database.prepare(`
-          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'task' AND entity_id = ?
-        `).get(task.id).count;
-
-        // Get dependencies (tasks this task depends on)
-        const depRows = database.prepare(`
-          SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?
-        `).all(task.id);
-        task.dependencies = depRows.map(row => row.dependency_task_id);
-
-        // Get dependent tasks (tasks that depend on this task)
-        const depTaskRows = database.prepare(`
-          SELECT dependent_task_id FROM task_dependencies WHERE dependency_task_id = ?
-        `).all(task.id);
-        task.dependent_tasks = depTaskRows.map(row => row.dependent_task_id);
-
-        // Check if all dependencies are resolved (closed)
-        if (task.dependencies.length > 0) {
-          const depStatusCheck = database.prepare(`
-            SELECT COUNT(*) as total_deps, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_deps
-            FROM tasks WHERE id IN (${task.dependencies.map(() => '?').join(',')})
-          `).get(...task.dependencies);
-
-          task.dependencies_resolved = depStatusCheck.total_deps === depStatusCheck.closed_deps;
-        } else {
-          task.dependencies_resolved = true; // No dependencies means all are "resolved"
-        }
-      }
-
-      // Apply dependencies_resolved filter if specified
-      let filteredTasks = tasks;
-      if (dependencies_resolved !== undefined) {
-        filteredTasks = tasks.filter(task => task.dependencies_resolved === dependencies_resolved);
-      }
-
-      const output = {
-        data: convertSQLiteBooleans(filteredTasks),
-        total_count: tasks.length,
-        filtered_count: filteredTasks.length
-      };
 
       return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
+        content: [{ type: 'text', text: 'Database initialized successfully' }],
+        structuredContent: {
+          success: true,
+          message: 'Database initialized successfully',
+          database_path: dbFilePath
+        }
       };
     } catch (error) {
       return {
-        content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
+        content: [{ type: 'text', text: `Error initializing database: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Epics
+server.registerTool(
+  'create_epics',
+  {
+    title: 'Create Epics',
+    description: 'Create multiple epics in the SDLC tracker',
+    inputSchema: {
+      epics: z.array(z.object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        assigned_to: z.enum(['productmanager']).optional()
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        epic_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ epics }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const epic of epics) {
+        try {
+          const stmt = database.prepare(`
+            INSERT INTO epics (title, description, assigned_to, created_by, owner)
+            VALUES (?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            epic.title,
+            epic.description || null,
+            epic.assigned_to || null,
+            'productmanager', // Default creator
+            'productmanager'  // Default owner
+          );
+
+          results.push({
+            success: true,
+            epic_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating epics: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create User Stories
+server.registerTool(
+  'create_user_stories',
+  {
+    title: 'Create User Stories',
+    description: 'Create multiple user stories in the SDLC tracker',
+    inputSchema: {
+      user_stories: z.array(z.object({
+        epic_id: z.number().optional(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        acceptance_criteria: z.string().optional(),
+        story_points: z.number().optional(),
+        assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        user_story_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ user_stories }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const story of user_stories) {
+        try {
+          // Validate foreign key if epic_id provided
+          if (story.epic_id) {
+            const epicExists = database.prepare('SELECT id FROM epics WHERE id = ?').get(story.epic_id);
+            if (!epicExists) {
+              results.push({
+                success: false,
+                error: `Epic with ID ${story.epic_id} does not exist`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, story_points, assigned_to, phase, phase_status, created_by, current_owner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            story.epic_id || null,
+            story.title,
+            story.description || null,
+            story.acceptance_criteria || null,
+            story.story_points || null,
+            story.assigned_to || null,
+            story.phase || null,
+            story.phase_status || null,
+            'productmanager', // Default creator
+            story.assigned_to || 'productmanager' // Default owner
+          );
+
+          results.push({
+            success: true,
+            user_story_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating user stories: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Tasks
+server.registerTool(
+  'create_tasks',
+  {
+    title: 'Create Tasks',
+    description: 'Create multiple tasks in the SDLC tracker',
+    inputSchema: {
+      tasks: z.array(z.object({
+        user_story_id: z.number().optional(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        estimated_hours: z.number().optional(),
+        assigned_to: z.enum(['architect', 'developer']).optional(),
+        priority: z.enum(['low', 'medium', 'high']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        task_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ tasks }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const task of tasks) {
+        try {
+          // Validate foreign key if user_story_id provided
+          if (task.user_story_id) {
+            const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
+            if (!storyExists) {
+              results.push({
+                success: false,
+                error: `User story with ID ${task.user_story_id} does not exist`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO tasks (user_story_id, title, description, estimated_hours, assigned_to, priority, phase, phase_status, created_by, current_owner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            task.user_story_id || null,
+            task.title,
+            task.description || null,
+            task.estimated_hours || null,
+            task.assigned_to || null,
+            task.priority || null,
+            task.phase || null,
+            task.phase_status || null,
+            'developer', // Default creator
+            task.assigned_to || 'developer' // Default owner
+          );
+
+          results.push({
+            success: true,
+            task_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Bugs
+server.registerTool(
+  'create_bugs',
+  {
+    title: 'Create Bugs',
+    description: 'Create multiple bug reports in the SDLC tracker',
+    inputSchema: {
+      bugs: z.array(z.object({
+        user_story_id: z.number().optional(),
+        task_id: z.number().optional(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
+        reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
+        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.enum(['Open', 'In Progress', 'Fixed', 'Closed']).optional()
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        bug_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ bugs }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const bug of bugs) {
+        try {
+          // Validate foreign keys
+          if (bug.user_story_id) {
+            const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(bug.user_story_id);
+            if (!storyExists) {
+              results.push({
+                success: false,
+                error: `User story with ID ${bug.user_story_id} does not exist`
+              });
+              continue;
+            }
+          }
+
+          if (bug.task_id) {
+            const taskExists = database.prepare('SELECT id FROM tasks WHERE id = ?').get(bug.task_id);
+            if (!taskExists) {
+              results.push({
+                success: false,
+                error: `Task with ID ${bug.task_id} does not exist`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO bugs (user_story_id, task_id, title, description, severity, reported_by, assigned_to, phase, phase_status, created_by, current_owner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            bug.user_story_id || null,
+            bug.task_id || null,
+            bug.title,
+            bug.description || null,
+            bug.severity,
+            bug.reported_by,
+            bug.assigned_to || null,
+            bug.phase || null,
+            bug.phase_status || null,
+            bug.reported_by,
+            bug.assigned_to || bug.reported_by
+          );
+
+          results.push({
+            success: true,
+            bug_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating bugs: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Test Cases
+server.registerTool(
+  'create_test_cases',
+  {
+    title: 'Create Test Cases',
+    description: 'Create multiple test cases in the SDLC tracker',
+    inputSchema: {
+      test_cases: z.array(z.object({
+        user_story_id: z.number().optional(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        preconditions: z.string().optional(),
+        steps: z.string().min(1),
+        expected_result: z.string().min(1),
+        assigned_to: z.enum(['tester', 'productmanager']).optional(),
+        phase: z.string().optional(),
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        test_case_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ test_cases }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const testCase of test_cases) {
+        try {
+          // Validate foreign key if user_story_id provided
+          if (testCase.user_story_id) {
+            const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
+            if (!storyExists) {
+              results.push({
+                success: false,
+                error: `User story with ID ${testCase.user_story_id} does not exist`
+              });
+              continue;
+            }
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO test_cases (user_story_id, title, description, preconditions, steps, expected_result, assigned_to, phase, phase_status, created_by, current_owner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            testCase.user_story_id || null,
+            testCase.title,
+            testCase.description || null,
+            testCase.preconditions || null,
+            testCase.steps,
+            testCase.expected_result,
+            testCase.assigned_to || null,
+            testCase.phase || null,
+            testCase.phase_status || null,
+            'tester', // Default creator
+            testCase.assigned_to || 'tester' // Default owner
+          );
+
+          results.push({
+            success: true,
+            test_case_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating test cases: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Create Comments
+server.registerTool(
+  'create_comments',
+  {
+    title: 'Create Comments',
+    description: 'Create comments on SDLC entities for stakeholder feedback',
+    inputSchema: {
+      comments: z.array(z.object({
+        entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
+        entity_id: z.number(),
+        comment_text: z.string().min(1),
+        author: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect'])
+      })).min(1)
+    },
+    outputSchema: {
+      results: z.array(z.object({
+        success: z.boolean(),
+        comment_id: z.number().optional(),
+        error: z.string().optional()
+      }))
+    }
+  },
+  async ({ comments }) => {
+    try {
+      const database = getDatabase();
+      const results = [];
+
+      for (const comment of comments) {
+        try {
+          // Validate entity exists
+          const entityTable = {
+            epic: 'epics',
+            user_story: 'user_stories',
+            task: 'tasks',
+            bug: 'bugs',
+            test_case: 'test_cases'
+          };
+
+          const tableName = entityTable[comment.entity_type];
+          const entityExists = database.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(comment.entity_id);
+          
+          if (!entityExists) {
+            results.push({
+              success: false,
+              error: `${comment.entity_type} with ID ${comment.entity_id} does not exist`
+            });
+            continue;
+          }
+
+          const stmt = database.prepare(`
+            INSERT INTO comments (entity_type, entity_id, comment_text, author)
+            VALUES (?, ?, ?, ?)
+          `);
+
+          const result = stmt.run(
+            comment.entity_type,
+            comment.entity_id,
+            comment.comment_text,
+            comment.author
+          );
+
+          results.push({
+            success: true,
+            comment_id: result.lastInsertRowid as number
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ results }, null, 2) }],
+        structuredContent: { results }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error creating comments: ${error.message}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// Tool: Get Comments
+server.registerTool(
+  'get_comments',
+  {
+    title: 'Get Comments',
+    description: 'Get comments for a specific SDLC entity',
+    inputSchema: {
+      entity_type: z.enum(['epic', 'user_story', 'task', 'bug', 'test_case']),
+      entity_id: z.number(),
+      limit: z.number().default(50)
+    },
+    outputSchema: {
+      comments: z.array(z.object({
+        id: z.number(),
+        entity_type: z.string(),
+        entity_id: z.number(),
+        comment_text: z.string(),
+        author: z.string(),
+        created_at: z.string(),
+        updated_at: z.string()
+      })),
+      total_count: z.number()
+    }
+  },
+  async ({ entity_type, entity_id, limit = 50 }) => {
+    try {
+      const database = getDatabase();
+
+      // Validate entity exists
+      const entityTable = {
+        epic: 'epics',
+        user_story: 'user_stories',
+        task: 'tasks',
+        bug: 'bugs',
+        test_case: 'test_cases'
+      };
+
+      const tableName = entityTable[entity_type];
+      const entityExists = database.prepare(`SELECT id FROM ${tableName} WHERE id = ?`).get(entity_id);
+      
+      if (!entityExists) {
+        return {
+          content: [{ type: 'text', text: `${entity_type} with ID ${entity_id} does not exist` }],
+          isError: true
+        };
+      }
+
+      const stmt = database.prepare(`
+        SELECT id, entity_type, entity_id, comment_text, author, created_at, updated_at
+        FROM comments
+        WHERE entity_type = ? AND entity_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `);
+
+      const comments = stmt.all(entity_type, entity_id, limit);
+
+      const totalCount = database.prepare(`
+        SELECT COUNT(*) as count
+        FROM comments
+        WHERE entity_type = ? AND entity_id = ?
+      `).get(entity_type, entity_id).count;
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ comments, total_count: totalCount }, null, 2) }],
+        structuredContent: { comments, total_count: totalCount }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text', text: `Error getting comments: ${error.message}` }],
         isError: true
       };
     }
@@ -1110,74 +1678,48 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, limit = 50 }) => {
+  async ({ user_story_id, status, assigned_to, limit = 50 }) => {
     try {
       const database = getDatabase();
 
-      let query = `SELECT DISTINCT t.* FROM tasks t`;
+      let query = `
+        SELECT tc.*,
+               COUNT(c.id) as comment_count
+        FROM test_cases tc
+        LEFT JOIN comments c ON c.entity_type = 'test_case' AND c.entity_id = tc.id
+      `;
+
       const conditions = [];
       const params = [];
 
-      if (task_id) {
-        conditions.push('id = ?');
-        params.push(task_id);
-      }
-
       if (user_story_id) {
-        conditions.push('user_story_id = ?');
+        conditions.push('tc.user_story_id = ?');
         params.push(user_story_id);
       }
 
       if (status) {
-        conditions.push('t.status = ?');
+        conditions.push('tc.status = ?');
         params.push(status);
       }
 
       if (assigned_to) {
-        conditions.push('t.assigned_to = ?');
+        conditions.push('tc.assigned_to = ?');
         params.push(assigned_to);
-      }
-
-      // Dependency filtering
-      if (depends_on) {
-        // Filter tasks that depend on the specified task ID
-        query += ` INNER JOIN task_dependencies td ON t.id = td.dependent_task_id AND td.dependency_task_id = ?`;
-        params.push(depends_on);
-      }
-
-      if (depended_by) {
-        // Filter tasks that are depended on by the specified task ID
-        query += ` INNER JOIN task_dependencies td2 ON t.id = td2.dependency_task_id AND td2.dependent_task_id = ?`;
-        params.push(depended_by);
-      }
-
-      if (has_dependencies !== undefined) {
-        if (has_dependencies) {
-          // Filter tasks that have any dependencies (either as dependent or dependency)
-          query += ` INNER JOIN task_dependencies td3 ON (t.id = td3.dependent_task_id OR t.id = td3.dependency_task_id)`;
-        } else {
-          // Filter tasks that have no dependencies
-          query += ` LEFT JOIN task_dependencies td3 ON (t.id = td3.dependent_task_id OR t.id = td3.dependency_task_id)`;
-          conditions.push('td3.dependency_task_id IS NULL');
-        }
       }
 
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
-      query += ` ORDER BY t.created_at DESC LIMIT ?`;
+      query += `
+        GROUP BY tc.id
+        ORDER BY tc.created_at DESC
+        LIMIT ?
+      `;
       params.push(limit);
 
       const stmt = database.prepare(query);
       const test_cases = stmt.all(...params);
-
-      // Add comment count to each test case
-      for (const testCase of test_cases) {
-        testCase.comment_count = database.prepare(`
-          SELECT COUNT(*) as count FROM comments WHERE entity_type = 'test_case' AND entity_id = ?
-        `).get(testCase.id).count;
-      }
 
       const output = {
         data: convertSQLiteBooleans(test_cases),
