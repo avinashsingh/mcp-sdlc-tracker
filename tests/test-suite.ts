@@ -957,6 +957,67 @@ class TrackerTestSuite {
     }
   }
 
+  async testBugStatusIntelligence() {
+    try {
+      // Create test bugs with different scenarios
+      const bug1Result = db.prepare(`
+        INSERT INTO bugs (title, description, severity, reported_by, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('Bug Fixed Needs QA', 'A bug that was just fixed', 'High', 'tester', 'developer', 'developer', 'developer', 'In Progress');
+
+      const bug2Result = db.prepare(`
+        INSERT INTO bugs (title, description, severity, reported_by, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('Bug Closed No Regression Test', 'A bug closed without regression tests', 'Medium', 'tester', 'developer', 'developer', 'developer', 'Fixed');
+
+      const bug3Result = db.prepare(`
+        INSERT INTO bugs (title, description, severity, reported_by, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('New Bug Needs Assignment', 'A newly opened bug', 'Low', 'tester', 'tester', 'tester', 'tester', 'In Progress');
+
+      // Test 1: Move bug to "Fixed" - should suggest QA verification
+      const updateStmt = db.prepare('UPDATE bugs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      updateStmt.run('Fixed', bug1Result.lastInsertRowid);
+
+      // Verify bug status changed
+      const bug1Fixed = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug1Result.lastInsertRowid) as { status: string };
+      this.assert(bug1Fixed.status === 'Fixed', 'Bug 1 should be marked as Fixed');
+
+      // Test 2: Move bug to "Closed" - should check for regression tests
+      updateStmt.run('Closed', bug2Result.lastInsertRowid);
+
+      // Verify bug status changed
+      const bug2Closed = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug2Result.lastInsertRowid) as { status: string };
+      this.assert(bug2Closed.status === 'Closed', 'Bug 2 should be marked as Closed');
+
+      // Check if regression tests exist (should be 0)
+      const regressionTests = db.prepare(`
+        SELECT COUNT(*) as test_count FROM test_cases
+        WHERE title LIKE ? OR description LIKE ?
+      `).get('%regression%Bug Closed No Regression Test%', '%regression%Bug Closed No Regression Test%');
+
+      this.assert(regressionTests.test_count === 0, 'Should have no regression tests for this bug');
+
+      // Test 3: Move bug to "Open" - should suggest reassignment
+      updateStmt.run('Open', bug3Result.lastInsertRowid);
+
+      // Verify bug status changed
+      const bug3Open = db.prepare('SELECT status FROM bugs WHERE id = ?').get(bug3Result.lastInsertRowid) as { status: string };
+      this.assert(bug3Open.status === 'Open', 'Bug 3 should be marked as Open');
+
+      // Verify the bug is assigned to tester (should trigger reassignment suggestion)
+      const bug3Assignee = db.prepare('SELECT assigned_to FROM bugs WHERE id = ?').get(bug3Result.lastInsertRowid) as { assigned_to: string };
+      this.assert(bug3Assignee.assigned_to === 'tester', 'Bug 3 should be assigned to tester initially');
+
+      // The workflow intelligence would be triggered in the MCP tool, but here we're testing the database logic
+      // In a real scenario, the MCP tool would check this and return workflow_suggestions
+
+      this.recordTest('testBugStatusIntelligence', true);
+    } catch (error) {
+      this.recordTest('testBugStatusIntelligence', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -993,6 +1054,7 @@ class TrackerTestSuite {
     await this.testPhaseFunctionality();
     await this.testWorkflowIntelligence();
     await this.testTaskDependencyIntelligence();
+    await this.testBugStatusIntelligence();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;

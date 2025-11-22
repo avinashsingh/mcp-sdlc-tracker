@@ -2372,6 +2372,48 @@ server.registerTool(
         }
       }
 
+      // Check for workflow intelligence when bug status changes
+      if (entity_type === 'bug') {
+        if (status === 'Fixed') {
+          // Suggest QA verification for fixed bugs
+          workflow_suggestions.push({
+            entity_type: 'bug',
+            entity_id,
+            suggested_action: 'qa_verification',
+            reason: 'Bug has been marked as fixed and should be verified by QA',
+            suggested_status: 'In Progress' // Move to QA testing phase
+          });
+        } else if (status === 'Closed') {
+          // Check if regression tests exist for closed bugs
+          const regressionTests = database.prepare(`
+            SELECT COUNT(*) as test_count FROM test_cases
+            WHERE title LIKE ? OR description LIKE ?
+          `).get(`%regression%${currentEntity.title}%`, `%regression%${currentEntity.title}%`);
+
+          if (regressionTests.test_count === 0) {
+            workflow_suggestions.push({
+              entity_type: 'test_case',
+              entity_id: null, // No specific test case ID
+              suggested_action: 'create_regression_test',
+              reason: `Bug "${currentEntity.title}" was closed but no regression tests found`,
+              suggested_status: null
+            });
+          }
+        } else if (status === 'Open') {
+          // Suggest developer reassignment for newly opened bugs
+          const currentAssignee = currentEntity.assigned_to;
+          if (!currentAssignee || currentAssignee === 'tester') {
+            workflow_suggestions.push({
+              entity_type: 'bug',
+              entity_id,
+              suggested_action: 'reassign_developer',
+              reason: 'Newly opened bug should be assigned to a developer for investigation',
+              suggested_status: null
+            });
+          }
+        }
+      }
+
       const output = {
         success: true,
         entity_type,
