@@ -2143,9 +2143,15 @@ server.registerTool(
       old_status: z.string().optional(),
       new_status: z.string().optional(),
       old_assigned_to: z.string().nullable().optional(),
-      new_assigned_to: z.string().nullable().optional()
-    }
-  },
+      new_assigned_to: z.string().nullable().optional(),
+      workflow_suggestions: z.array(z.object({
+        entity_type: z.string(),
+        entity_id: z.number(),
+        suggested_action: z.string(),
+        reason: z.string(),
+        suggested_status: z.string()
+      })).optional()
+    },
   async ({ entity_type, entity_id, status, assigned_to, phase, phase_status }) => {
     try {
       const database = getDatabase();
@@ -2234,6 +2240,46 @@ server.registerTool(
         `).run(entity_type, entity_id, currentEntity.assigned_to, assigned_to, 'productmanager');
       }
 
+      // Check for workflow intelligence when task is closed
+      const workflow_suggestions = [];
+      if (entity_type === 'task' && status === 'Closed') {
+        const taskInfo = database.prepare(`
+          SELECT user_story_id FROM tasks WHERE id = ?
+        `).get(entity_id);
+
+        if (taskInfo?.user_story_id) {
+          // Check if all tasks in the user story are closed
+          const allTasksResult = database.prepare(`
+            SELECT
+              COUNT(*) as total_tasks,
+              COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed_tasks
+            FROM tasks
+            WHERE user_story_id = ?
+          `).get(taskInfo.user_story_id);
+
+          if (allTasksResult.total_tasks > 0 &&
+              allTasksResult.total_tasks === allTasksResult.closed_tasks) {
+
+            // Check current user story status
+            const userStory = database.prepare(`
+              SELECT status FROM user_stories WHERE id = ?
+            `).get(taskInfo.user_story_id);
+
+            // Only suggest if user story is not already in QA or later
+            const advancedStatuses = ['QA', 'UAT', 'Closed'];
+            if (!advancedStatuses.includes(userStory.status)) {
+              workflow_suggestions.push({
+                entity_type: 'user_story',
+                entity_id: taskInfo.user_story_id,
+                suggested_action: 'move_to_qa',
+                reason: `All ${allTasksResult.total_tasks} tasks in this user story are now closed`,
+                suggested_status: 'QA'
+              });
+            }
+          }
+        }
+      }
+
       const output = {
         success: true,
         entity_type,
@@ -2241,7 +2287,8 @@ server.registerTool(
         old_status: currentEntity.status,
         new_status: status || currentEntity.status,
         old_assigned_to: currentEntity.assigned_to,
-        new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to
+        new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+        workflow_suggestions: workflow_suggestions.length > 0 ? workflow_suggestions : undefined
       };
 
       return {

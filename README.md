@@ -52,10 +52,37 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `list_test_cases`: List test cases with optional filtering by status, assignee
 
 ### Workflow Management
-- `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording
+- `update_entity_status`: Update status and/or assignment of any SDLC entity with audit trail recording and intelligent workflow suggestions
 - `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
 - `manage_epic_dependencies`: Add or remove dependencies for multiple epics in bulk
 - `manage_task_dependencies`: Add or remove dependencies for multiple tasks in bulk (tasks must belong to same user story)
+
+#### Intelligent Workflow Suggestions
+The system provides intelligent workflow guidance when tasks are completed:
+
+- **Task Closure Intelligence**: When a task is moved to "Closed" status, the system automatically checks if all tasks in the user story are now closed
+- **User Story Advancement**: If all tasks are closed and the user story is not already in QA/UAT/Closed status, the system suggests moving the user story to "QA" status
+- **Proactive Guidance**: Helps teams maintain proper SDLC workflow without manual tracking
+
+**Example Response:**
+```json
+{
+  "success": true,
+  "entity_type": "task",
+  "entity_id": 5,
+  "old_status": "Review",
+  "new_status": "Closed",
+  "workflow_suggestions": [
+    {
+      "entity_type": "user_story",
+      "entity_id": 2,
+      "suggested_action": "move_to_qa",
+      "reason": "All 3 tasks in this user story are now closed",
+      "suggested_status": "QA"
+    }
+  ]
+}
+```
 
 ### Comments Support
 - `create_comments`: Create comments on any SDLC entity for stakeholder feedback

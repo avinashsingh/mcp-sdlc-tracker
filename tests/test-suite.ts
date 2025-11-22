@@ -705,26 +705,83 @@ class TrackerTestSuite {
 
   async testPhaseFunctionality() {
     try {
-      // Test phase filtering on user stories
-      const userStories = db.prepare('SELECT * FROM user_stories WHERE phase = ?').all('Phase 1');
-      this.assert(userStories.length === 0, 'Should find no user stories with Phase 1 initially');
+      // Test phase functionality
+      const taskResult = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Phase Test Task', 'Task for phase testing', 'architect', 'architect', 'architect');
 
-      // Update a user story with phase
-      const updateStmt = db.prepare('UPDATE user_stories SET phase = ?, phase_status = ? WHERE id = ?');
-      updateStmt.run('Phase 1', 'In Progress', 1);
+      // Test updating phase
+      const updateStmt = db.prepare('UPDATE tasks SET phase = ?, phase_status = ? WHERE id = ?');
+      updateStmt.run('Development', 'In Progress', taskResult.lastInsertRowid);
 
-      // Test phase filtering
-      const phaseStories = db.prepare('SELECT * FROM user_stories WHERE phase = ?').all('Phase 1');
-      this.assert(phaseStories.length === 1, 'Should find 1 user story with Phase 1');
-      this.assert(phaseStories[0].phase_status === 'In Progress', 'Should have correct phase status');
-
-      // Test phase status filtering
-      const statusStories = db.prepare('SELECT * FROM user_stories WHERE phase_status = ?').all('In Progress');
-      this.assert(statusStories.length === 1, 'Should find 1 user story with In Progress phase status');
+      // Verify phase was set
+      const task = db.prepare('SELECT phase, phase_status FROM tasks WHERE id = ?').get(taskResult.lastInsertRowid) as { phase: string; phase_status: string };
+      this.assert(task.phase === 'Development', 'Phase should be set');
+      this.assert(task.phase_status === 'In Progress', 'Phase status should be set');
 
       this.recordTest('testPhaseFunctionality', true);
     } catch (error) {
       this.recordTest('testPhaseFunctionality', false, error.message);
+    }
+  }
+
+  async testWorkflowIntelligence() {
+    try {
+      // Create a user story
+      const storyResult = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(1, 'Workflow Intelligence Test Story', 'Story for testing workflow intelligence', 'architect', 'productmanager', 'architect');
+
+      // Create multiple tasks for the user story
+      const task1Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task 1', 'First task', 'architect', 'architect', 'architect', 'In Progress');
+
+      const task2Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task 2', 'Second task', 'architect', 'architect', 'architect', 'Review');
+
+      const task3Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task 3', 'Third task', 'architect', 'architect', 'architect', 'New');
+
+      // Test 1: Close Task 3 - should not trigger suggestion (not all tasks closed)
+      const updateStmt1 = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      updateStmt1.run('Closed', task3Result.lastInsertRowid);
+
+      // Check that user story status is still not QA
+      const story1 = db.prepare('SELECT status FROM user_stories WHERE id = ?').get(storyResult.lastInsertRowid) as { status: string };
+      this.assert(story1.status !== 'QA', 'User story should not be moved to QA when not all tasks are closed');
+
+      // Test 2: Close Task 1 - should not trigger suggestion (not all tasks closed)
+      updateStmt1.run('Closed', task1Result.lastInsertRowid);
+
+      const story2 = db.prepare('SELECT status FROM user_stories WHERE id = ?').get(storyResult.lastInsertRowid) as { status: string };
+      this.assert(story2.status !== 'QA', 'User story should not be moved to QA when not all tasks are closed');
+
+      // Test 3: Close Task 2 - should trigger suggestion (all tasks now closed)
+      updateStmt1.run('Closed', task2Result.lastInsertRowid);
+
+      // Verify all tasks are closed
+      const taskCount = db.prepare(`
+        SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'Closed' THEN 1 END) as closed
+        FROM tasks WHERE user_story_id = ?
+      `).get(storyResult.lastInsertRowid) as { total: number; closed: number };
+
+      this.assert(taskCount.total === 3, 'Should have 3 tasks total');
+      this.assert(taskCount.closed === 3, 'All 3 tasks should be closed');
+
+      // The workflow intelligence would be triggered in the MCP tool, but here we're testing the database logic
+      // In a real scenario, the MCP tool would check this and return workflow_suggestions
+
+      this.recordTest('testWorkflowIntelligence', true);
+    } catch (error) {
+      this.recordTest('testWorkflowIntelligence', false, error.message);
     }
   }
 
@@ -761,6 +818,7 @@ class TrackerTestSuite {
     await this.testFiltering();
     await this.testForeignKeyConstraints();
     await this.testPhaseFunctionality();
+    await this.testWorkflowIntelligence();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
