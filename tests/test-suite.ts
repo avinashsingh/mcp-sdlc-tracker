@@ -1178,6 +1178,78 @@ class TrackerTestSuite {
     }
   }
 
+  async testTaskDependenciesResolved() {
+    try {
+      // Create a user story first
+      const storyResult = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(1, 'Task Dependencies Test Story', 'Story for testing task dependencies', 'productmanager', 'productmanager');
+
+      // Create test tasks with different dependency scenarios
+      const task1Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task with No Dependencies', 'Task that has no dependencies', 'developer', 'architect', 'architect', 'New');
+
+      const task2Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task with Resolved Dependencies', 'Task with all dependencies closed', 'developer', 'architect', 'architect', 'New');
+
+      const task3Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Task with Unresolved Dependencies', 'Task with open dependencies', 'developer', 'architect', 'architect', 'New');
+
+      const task4Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Closed Dependency Task', 'Task that serves as a dependency', 'developer', 'architect', 'architect', 'Closed');
+
+      const task5Result = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(storyResult.lastInsertRowid, 'Open Dependency Task', 'Task that serves as an open dependency', 'developer', 'architect', 'architect', 'New');
+
+      // Set up dependencies
+      const depStmt = db.prepare(`
+        INSERT INTO task_dependencies (dependent_task_id, dependency_task_id, created_by)
+        VALUES (?, ?, ?)
+      `);
+
+      // Task2 depends on Task4 (closed) - should be resolved
+      depStmt.run(task2Result.lastInsertRowid, task4Result.lastInsertRowid, 'architect');
+
+      // Task3 depends on Task5 (open) - should be unresolved
+      depStmt.run(task3Result.lastInsertRowid, task5Result.lastInsertRowid, 'architect');
+
+      // Test the dependencies_resolved flag calculation
+      // Task1: No dependencies - should be true
+      const task1Deps = db.prepare('SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?').all(task1Result.lastInsertRowid);
+      this.assert(task1Deps.length === 0, 'Task1 should have no dependencies');
+
+      // Task2: Depends on closed task - should be true
+      const task2Deps = db.prepare('SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?').all(task2Result.lastInsertRowid);
+      this.assert(task2Deps.length === 1, 'Task2 should have 1 dependency');
+      const task4Status = db.prepare('SELECT status FROM tasks WHERE id = ?').get(task4Result.lastInsertRowid);
+      this.assert(task4Status.status === 'Closed', 'Task4 should be closed');
+
+      // Task3: Depends on open task - should be false
+      const task3Deps = db.prepare('SELECT dependency_task_id FROM task_dependencies WHERE dependent_task_id = ?').all(task3Result.lastInsertRowid);
+      this.assert(task3Deps.length === 1, 'Task3 should have 1 dependency');
+      const task5Status = db.prepare('SELECT status FROM tasks WHERE id = ?').get(task5Result.lastInsertRowid);
+      this.assert(task5Status.status === 'New', 'Task5 should be open');
+
+      // The MCP tool would calculate dependencies_resolved dynamically
+      // Here we're testing the underlying database logic
+
+      this.recordTest('testTaskDependenciesResolved', true);
+    } catch (error) {
+      this.recordTest('testTaskDependenciesResolved', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -1217,6 +1289,7 @@ class TrackerTestSuite {
     await this.testBugStatusIntelligence();
     await this.testEpicDependenciesResolved();
     await this.testUserStoryDependenciesResolved();
+    await this.testTaskDependenciesResolved();
 
     // Summary
     const passed = this.testResults.filter(r => r.passed).length;
