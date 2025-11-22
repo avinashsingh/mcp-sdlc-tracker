@@ -894,7 +894,7 @@ server.registerTool(
       message: z.string()
     }
    },
-   async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
+  async ({ task_id, user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
     try {
       const database = getDatabase();
 
@@ -990,6 +990,7 @@ server.registerTool(
     title: 'List Bugs',
     description: 'List bugs with optional filtering by status, severity, reporter, assignee',
     inputSchema: {
+      bug_id: z.number().optional(),
       user_story_id: z.number().optional(),
       status: z.enum(['Open', 'In Progress', 'Review', 'Fixed', 'Closed']).optional(),
       severity: z.enum(['Critical', 'High', 'Medium', 'Low']).optional(),
@@ -1117,8 +1118,13 @@ server.registerTool(
       const conditions = [];
       const params = [];
 
+      if (task_id) {
+        conditions.push('id = ?');
+        params.push(task_id);
+      }
+
       if (user_story_id) {
-        conditions.push('t.user_story_id = ?');
+        conditions.push('user_story_id = ?');
         params.push(user_story_id);
       }
 
@@ -1557,6 +1563,7 @@ server.registerTool(
     title: 'List Epics',
     description: 'List epics with optional status filtering (excludes archived by default)',
     inputSchema: {
+      epic_id: z.number().optional(),
       status: z.enum(['New', 'Open', 'Closed']).optional(),
       include_archived: z.boolean().default(false),
       limit: z.number().default(50),
@@ -1584,7 +1591,7 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ status, include_archived = false, limit = 50, dependencies_resolved }) => {
+  async ({ epic_id, status, include_archived = false, limit = 50, dependencies_resolved }) => {
     try {
       const database = getDatabase();
 
@@ -1607,6 +1614,11 @@ server.registerTool(
       if (status) {
         conditions.push('status = ?');
         params.push(status);
+      }
+
+      if (epic_id) {
+        conditions.push('e.id = ?');
+        params.push(epic_id);
       }
 
       if (conditions.length > 0) {
@@ -1682,6 +1694,7 @@ server.registerTool(
     title: 'List User Stories',
     description: 'List user stories with filtering by epic, status, assignee, or dependencies_resolved status (excludes archived by default)',
     inputSchema: {
+      user_story_id: z.number().optional(),
       epic_id: z.number().optional(),
       status: z.enum(['New', 'In Progress', 'QA', 'UAT', 'Closed']).optional(),
       assigned_to: z.enum(['productmanager', 'architect', 'developer', 'tester']).optional(),
@@ -1718,7 +1731,7 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ epic_id, status, assigned_to, include_archived = false, limit = 50, dependencies_resolved }) => {
+  async ({ user_story_id, epic_id, status, assigned_to, include_archived = false, limit = 50, dependencies_resolved }) => {
     try {
       const database = getDatabase();
 
@@ -1740,6 +1753,11 @@ server.registerTool(
 
       if (!include_archived) {
         conditions.push('us.archived = 0');
+      }
+
+      if (user_story_id) {
+        conditions.push('us.id = ?');
+        params.push(user_story_id);
       }
 
       if (epic_id) {
@@ -1830,6 +1848,7 @@ server.registerTool(
     title: 'List Tasks',
     description: 'List tasks with optional filtering by user story, status, assignee, dependency relationships, and dependencies_resolved status',
     inputSchema: {
+      task_id: z.number().optional(),
       user_story_id: z.number().optional(),
       status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
       assigned_to: z.enum(['architect', 'developer']).optional(),
