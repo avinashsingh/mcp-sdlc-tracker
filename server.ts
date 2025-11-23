@@ -1846,10 +1846,33 @@ server.registerTool(
             },
             isError: true
           };
-        }
-      }
+         }
+       }
 
-      // Validate bug status transitions
+       // Validate user story QA requirements
+       if (entity_type === 'user_story' && status === 'QA') {
+         const openTasks = database.prepare(`
+           SELECT id FROM tasks
+           WHERE user_story_id = ? AND status != 'Closed'
+         `).all(entity_id);
+
+         if (openTasks.length > 0) {
+           const openTaskIds = openTasks.map(task => task.id);
+           return {
+             content: [{ type: 'text', text: `Cannot move user story to QA: ${openTasks.length} tasks are not closed (IDs: ${openTaskIds.join(', ')})` }],
+             structuredContent: {
+               success: false,
+               entity_type,
+               entity_id,
+               error: `Cannot move user story to QA: ${openTasks.length} tasks are not closed`,
+               open_task_ids: openTaskIds
+             },
+             isError: true
+           };
+         }
+       }
+
+       // Validate bug status transitions
       if (entity_type === 'bug' && status !== undefined) {
         const currentStatus = currentEntity.status;
 

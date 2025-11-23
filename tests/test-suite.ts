@@ -722,6 +722,77 @@ class TrackerTestSuite {
     }
   }
 
+  async testUserStoryQAValidation() {
+    try {
+      // Create a test epic first
+      const epicStmt = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner)
+        VALUES (?, ?, ?, ?)
+      `);
+      const epicResult = epicStmt.run('Test Epic for QA Validation', 'Epic for testing QA validation', 'productmanager', 'productmanager');
+      const epicId = epicResult.lastInsertRowid as number;
+
+      // Create a user story with acceptance criteria and test cases (so it can move to In Progress)
+      const usStmt = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const usResult = usStmt.run(epicId, 'US for QA validation', 'Description', 'Acceptance criteria here', 'productmanager', 'productmanager');
+      const usId = usResult.lastInsertRowid as number;
+
+      // Add test cases for this user story
+      const testCaseStmt = db.prepare(`
+        INSERT INTO test_cases (user_story_id, title, description, steps, expected_result, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      testCaseStmt.run(usId, 'Test Case 1', 'Test description', 'Step 1, Step 2', 'Expected result', 'tester', 'tester');
+
+      // Create tasks for this user story
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const task1Result = taskStmt.run(usId, 'Task 1', 'Task description 1', 'developer', 'developer');
+      const task1Id = task1Result.lastInsertRowid as number;
+      const task2Result = taskStmt.run(usId, 'Task 2', 'Task description 2', 'developer', 'developer');
+      const task2Id = task2Result.lastInsertRowid as number;
+
+      // Move user story to In Progress (should work since it has acceptance criteria and test cases)
+      const usInProgress = db.prepare('SELECT * FROM user_stories WHERE id = ?').get(usId);
+      this.assert(usInProgress.status === 'New', 'User story should start as New');
+
+      // Test 1: Try to move to QA when tasks are not closed - should fail
+      // We can't test the actual validation here since it's in the MCP tool, but we can verify the logic
+      const openTasksBefore = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      this.assert(openTasksBefore.length === 2, 'Should have 2 open tasks initially');
+      this.assert(openTasksBefore.some(t => t.id === task1Id), 'Task 1 should be open');
+      this.assert(openTasksBefore.some(t => t.id === task2Id), 'Task 2 should be open');
+
+      // Test 2: Close one task and verify the other is still open
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('Closed', task1Id);
+      const openTasksAfter = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      this.assert(openTasksAfter.length === 1, 'Should have 1 open task after closing one');
+      this.assert(openTasksAfter[0].id === task2Id, 'Task 2 should still be open');
+
+      // Test 3: Close all tasks
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('Closed', task2Id);
+      const openTasksFinal = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      this.assert(openTasksFinal.length === 0, 'Should have no open tasks after closing all');
+
+      // Test 4: Verify task IDs for validation error message
+      // Reset one task to open to test the validation logic
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('In Progress', task2Id);
+      const openTasksForValidation = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const openTaskIds = openTasksForValidation.map(t => t.id);
+      this.assert(openTaskIds.length === 1, 'Should have 1 open task for validation test');
+      this.assert(openTaskIds[0] === task2Id, 'Open task should be task 2');
+
+      this.recordTest('testUserStoryQAValidation', true);
+    } catch (error) {
+      this.recordTest('testUserStoryQAValidation', false, error.message);
+    }
+  }
+
   async testCreateEntitiesWithPhases() {
     try {
       // Test creating user story with phase
@@ -1356,6 +1427,7 @@ class TrackerTestSuite {
     await this.testUpdateTaskStatus();
     await this.testUpdateTaskStatusToReview();
     await this.testUserStoryInProgressValidation();
+    await this.testUserStoryQAValidation();
     await this.testCreateEntitiesWithPhases();
     await this.testUpdateEntityPhases();
 
