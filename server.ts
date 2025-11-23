@@ -1584,13 +1584,18 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ user_story_id, status, severity, reported_by, assigned_to, limit = 50 }) => {
+  async ({ bug_id, user_story_id, status, severity, reported_by, assigned_to, limit = 50 }) => {
     try {
       const database = getDatabase();
 
       let query = `SELECT * FROM bugs`;
       const conditions = [];
       const params = [];
+
+      if (bug_id) {
+        conditions.push('id = ?');
+        params.push(bug_id);
+      }
 
       if (status) {
         conditions.push('status = ?');
@@ -1710,11 +1715,6 @@ server.registerTool(
       if (assigned_to) {
         conditions.push('assigned_to = ?');
         params.push(assigned_to);
-      }
-
-      if (user_story_id) {
-        conditions.push('user_story_id = ?');
-        params.push(user_story_id);
       }
 
       if (conditions.length > 0) {
@@ -2416,13 +2416,18 @@ server.registerTool(
       filtered_count: z.number()
     }
   },
-  async ({ user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
+  async ({ task_id, user_story_id, status, assigned_to, depends_on, depended_by, has_dependencies, dependencies_resolved, limit = 50 }) => {
     try {
       const database = getDatabase();
 
       let query = `SELECT * FROM tasks`;
       const conditions = [];
       const params = [];
+
+      if (task_id) {
+        conditions.push('id = ?');
+        params.push(task_id);
+      }
 
       if (user_story_id) {
         conditions.push('user_story_id = ?');
@@ -2439,11 +2444,36 @@ server.registerTool(
         params.push(assigned_to);
       }
 
-      if (conditions.length > 0) {
-        query += ` WHERE ${conditions.join(' AND ')}`;
+      // Handle dependency filters that require JOINs
+      let joinClause = '';
+      if (depends_on !== undefined) {
+        joinClause += ` INNER JOIN task_dependencies td_depends ON t.id = td_depends.dependent_task_id AND td_depends.dependency_task_id = ?`;
+        params.push(depends_on);
       }
 
-      query += ` ORDER BY created_at DESC LIMIT ?`;
+      if (depended_by !== undefined) {
+        joinClause += ` INNER JOIN task_dependencies td_depended ON t.id = td_depended.dependency_task_id AND td_depended.dependent_task_id = ?`;
+        params.push(depended_by);
+      }
+
+      if (has_dependencies !== undefined) {
+        if (has_dependencies) {
+          joinClause += ` INNER JOIN task_dependencies td_has ON t.id = td_has.dependent_task_id`;
+        } else {
+          // For tasks without dependencies, we need a LEFT JOIN and WHERE clause
+          joinClause += ` LEFT JOIN task_dependencies td_has ON t.id = td_has.dependent_task_id`;
+          conditions.push('td_has.dependency_task_id IS NULL');
+        }
+      }
+
+      if (conditions.length > 0 || joinClause) {
+        query = `SELECT DISTINCT t.* FROM tasks t${joinClause}`;
+        if (conditions.length > 0) {
+          query += ` WHERE ${conditions.join(' AND ')}`;
+        }
+      }
+
+      query += ` ORDER BY t.created_at DESC LIMIT ?`;
       params.push(limit);
 
       const stmt = database.prepare(query);
