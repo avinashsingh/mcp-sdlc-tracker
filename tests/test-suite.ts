@@ -793,6 +793,95 @@ class TrackerTestSuite {
     }
   }
 
+  async testUserStoryUATValidation() {
+    try {
+      // Create a test epic first
+      const epicStmt = db.prepare(`
+        INSERT INTO epics (title, description, created_by, owner)
+        VALUES (?, ?, ?, ?)
+      `);
+      const epicResult = epicStmt.run('Test Epic for UAT Validation', 'Epic for testing UAT validation', 'productmanager', 'productmanager');
+      const epicId = epicResult.lastInsertRowid as number;
+
+      // Create a user story with acceptance criteria and test cases
+      const usStmt = db.prepare(`
+        INSERT INTO user_stories (epic_id, title, description, acceptance_criteria, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const usResult = usStmt.run(epicId, 'US for UAT validation', 'Description', 'Acceptance criteria here', 'productmanager', 'productmanager');
+      const usId = usResult.lastInsertRowid as number;
+
+      // Add test cases for this user story
+      const testCaseStmt = db.prepare(`
+        INSERT INTO test_cases (user_story_id, title, description, steps, expected_result, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      testCaseStmt.run(usId, 'Test Case 1', 'Test description', 'Step 1, Step 2', 'Expected result', 'tester', 'tester');
+      testCaseStmt.run(usId, 'Test Case 2', 'Test description 2', 'Step A, Step B', 'Expected result 2', 'tester', 'tester');
+
+      // Create tasks for this user story
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const task1Result = taskStmt.run(usId, 'Task 1', 'Task description 1', 'developer', 'developer');
+      const task1Id = task1Result.lastInsertRowid as number;
+      const task2Result = taskStmt.run(usId, 'Task 2', 'Task description 2', 'developer', 'developer');
+      const task2Id = task2Result.lastInsertRowid as number;
+
+      // Create bugs for this user story
+      const bugStmt = db.prepare(`
+        INSERT INTO bugs (user_story_id, title, description, severity, reported_by, assigned_to, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const bug1Result = bugStmt.run(usId, 'Bug 1', 'Bug description 1', 'High', 'tester', 'developer', 'tester', 'developer');
+      const bug1Id = bug1Result.lastInsertRowid as number;
+      const bug2Result = bugStmt.run(usId, 'Bug 2', 'Bug description 2', 'Medium', 'tester', 'developer', 'tester', 'developer');
+      const bug2Id = bug2Result.lastInsertRowid as number;
+
+      // Test 1: Try to move to UAT when everything is not ready - should fail
+      const openTasksBefore = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const openBugsBefore = db.prepare('SELECT id FROM bugs WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const failedTestsBefore = db.prepare('SELECT id FROM test_cases WHERE user_story_id = ? AND status != ?').all(usId, 'Passed');
+
+      this.assert(openTasksBefore.length === 2, 'Should have 2 open tasks initially');
+      this.assert(openBugsBefore.length === 2, 'Should have 2 open bugs initially');
+      this.assert(failedTestsBefore.length === 2, 'Should have 2 unpassed test cases initially');
+
+      // Test 2: Close all tasks, bugs, and pass all test cases
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_story_id = ?').run('Closed', usId);
+      db.prepare('UPDATE bugs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_story_id = ?').run('Closed', usId);
+      db.prepare('UPDATE test_cases SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_story_id = ?').run('Passed', usId);
+
+      // Verify everything is now ready
+      const openTasksAfter = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const openBugsAfter = db.prepare('SELECT id FROM bugs WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const failedTestsAfter = db.prepare('SELECT id FROM test_cases WHERE user_story_id = ? AND status != ?').all(usId, 'Passed');
+
+      this.assert(openTasksAfter.length === 0, 'Should have no open tasks after closing all');
+      this.assert(openBugsAfter.length === 0, 'Should have no open bugs after closing all');
+      this.assert(failedTestsAfter.length === 0, 'Should have no failed test cases after passing all');
+
+      // Test 3: Reset some items to test partial validation
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('In Progress', task1Id);
+      db.prepare('UPDATE bugs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('Open', bug1Id);
+      db.prepare('UPDATE test_cases SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('Failed', testCaseStmt.run(usId, 'Test Case 1', 'Test description', 'Step 1, Step 2', 'Expected result', 'tester', 'tester').lastInsertRowid);
+
+      // Verify the validation logic
+      const openTasksForValidation = db.prepare('SELECT id FROM tasks WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const openBugsForValidation = db.prepare('SELECT id FROM bugs WHERE user_story_id = ? AND status != ?').all(usId, 'Closed');
+      const failedTestsForValidation = db.prepare('SELECT id FROM test_cases WHERE user_story_id = ? AND status != ?').all(usId, 'Passed');
+
+      this.assert(openTasksForValidation.length > 0, 'Should have open tasks for validation test');
+      this.assert(openBugsForValidation.length > 0, 'Should have open bugs for validation test');
+      this.assert(failedTestsForValidation.length > 0, 'Should have failed tests for validation test');
+
+      this.recordTest('testUserStoryUATValidation', true);
+    } catch (error) {
+      this.recordTest('testUserStoryUATValidation', false, error.message);
+    }
+  }
+
   async testCreateEntitiesWithPhases() {
     try {
       // Test creating user story with phase
@@ -1428,6 +1517,7 @@ class TrackerTestSuite {
     await this.testUpdateTaskStatusToReview();
     await this.testUserStoryInProgressValidation();
     await this.testUserStoryQAValidation();
+    await this.testUserStoryUATValidation();
     await this.testCreateEntitiesWithPhases();
     await this.testUpdateEntityPhases();
 

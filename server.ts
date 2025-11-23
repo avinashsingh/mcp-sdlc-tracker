@@ -1872,6 +1872,62 @@ server.registerTool(
          }
        }
 
+       // Validate user story UAT requirements
+       if (entity_type === 'user_story' && status === 'UAT') {
+         const issues = [];
+
+         // Check 1: All tasks must be closed
+         const openTasks = database.prepare(`
+           SELECT id FROM tasks
+           WHERE user_story_id = ? AND status != 'Closed'
+         `).all(entity_id);
+
+         if (openTasks.length > 0) {
+           const openTaskIds = openTasks.map(task => task.id);
+           issues.push(`${openTasks.length} tasks not closed (IDs: ${openTaskIds.join(', ')})`);
+         }
+
+         // Check 2: All bugs must be closed
+         const openBugs = database.prepare(`
+           SELECT id FROM bugs
+           WHERE user_story_id = ? AND status != 'Closed'
+         `).all(entity_id);
+
+         if (openBugs.length > 0) {
+           const openBugIds = openBugs.map(bug => bug.id);
+           issues.push(`${openBugs.length} bugs not closed (IDs: ${openBugIds.join(', ')})`);
+         }
+
+         // Check 3: All test cases must have passed
+         const failedTestCases = database.prepare(`
+           SELECT id FROM test_cases
+           WHERE user_story_id = ? AND status != 'Passed'
+         `).all(entity_id);
+
+         if (failedTestCases.length > 0) {
+           const failedTestCaseIds = failedTestCases.map(tc => tc.id);
+           issues.push(`${failedTestCases.length} test cases not passed (IDs: ${failedTestCaseIds.join(', ')})`);
+         }
+
+         if (issues.length > 0) {
+           return {
+             content: [{ type: 'text', text: `Cannot move user story to UAT: ${issues.join(', ')}` }],
+             structuredContent: {
+               success: false,
+               entity_type,
+               entity_id,
+               error: `Cannot move user story to UAT: ${issues.join(', ')}`,
+               validation_details: {
+                 open_task_ids: openTasks.map(t => t.id),
+                 open_bug_ids: openBugs.map(b => b.id),
+                 failed_test_case_ids: failedTestCases.map(tc => tc.id)
+               }
+             },
+             isError: true
+           };
+         }
+       }
+
        // Validate bug status transitions
       if (entity_type === 'bug' && status !== undefined) {
         const currentStatus = currentEntity.status;
