@@ -1886,6 +1886,27 @@ server.registerTool(
         }
       }
 
+      // Validate epic closure requirements
+      if (entity_type === 'epic' && status === 'Closed') {
+        const openStories = database.prepare(`
+          SELECT COUNT(*) as count FROM user_stories
+          WHERE epic_id = ? AND status != 'Closed'
+        `).get(entity_id).count;
+
+        if (openStories > 0) {
+          return {
+            content: [{ type: 'text', text: `Cannot close epic: ${openStories} user stories are not closed` }],
+            structuredContent: {
+              success: false,
+              entity_type,
+              entity_id,
+              error: `Cannot close epic: ${openStories} user stories are not closed`
+            },
+            isError: true
+          };
+        }
+      }
+
       // Build update query
       const updateFields = [];
       const updateValues = [];
@@ -2731,11 +2752,30 @@ server.registerTool(
         changes.push({ field: 'description', old_value: epic.description, new_value: description });
       }
 
-      if (status !== undefined && status !== epic.status) {
-        updates.push('status = ?');
-        params.push(status);
-        changes.push({ field: 'status', old_value: epic.status, new_value: status });
-      }
+       if (status !== undefined && status !== epic.status) {
+         // Validate epic closure requirements
+         if (status === 'Closed') {
+           const openStories = database.prepare(`
+             SELECT COUNT(*) as count FROM user_stories
+             WHERE epic_id = ? AND status != 'Closed'
+           `).get(epic_id).count;
+
+           if (openStories > 0) {
+             return {
+               content: [{ type: 'text', text: `Cannot close epic: ${openStories} user stories are not closed` }],
+               structuredContent: {
+                 success: false,
+                 epic_id,
+                 error: `Cannot close epic: ${openStories} user stories are not closed`
+               }
+             };
+           }
+         }
+
+         updates.push('status = ?');
+         params.push(status);
+         changes.push({ field: 'status', old_value: epic.status, new_value: status });
+       }
 
       if (assigned_to !== undefined && assigned_to !== epic.assigned_to) {
         updates.push('assigned_to = ?');
