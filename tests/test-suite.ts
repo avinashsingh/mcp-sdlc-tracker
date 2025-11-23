@@ -170,6 +170,59 @@ db.exec(`
     transitioned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     transitioned_by TEXT NOT NULL CHECK (transitioned_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect'))
   );
+
+  CREATE TABLE IF NOT EXISTS wiki_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    content TEXT NOT NULL,
+    summary TEXT,
+    category TEXT CHECK (category IN ('technical', 'process', 'business', 'qa', 'knowledge')),
+    tags TEXT, -- JSON array
+    status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Published', 'Archived')),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    current_owner TEXT NOT NULL CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    assigned_to TEXT CHECK (assigned_to IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS wiki_page_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wiki_page_id INTEGER NOT NULL,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('epic', 'user_story', 'task', 'bug', 'test_case')),
+    entity_id INTEGER NOT NULL,
+    link_type TEXT NOT NULL DEFAULT 'related' CHECK (link_type IN ('related', 'documentation', 'requirements', 'design', 'testing')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (wiki_page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE
+  );
+
+  CREATE VIRTUAL TABLE IF NOT EXISTS wiki_pages_fts USING fts5(
+    title, content, summary,
+    content=wiki_pages,
+    content_rowid=id
+  );
+
+  CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_insert AFTER INSERT ON wiki_pages
+  BEGIN
+    INSERT INTO wiki_pages_fts(rowid, title, content, summary)
+    VALUES (new.id, new.title, new.content, new.summary);
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_delete AFTER DELETE ON wiki_pages
+  BEGIN
+    DELETE FROM wiki_pages_fts WHERE rowid = old.id;
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS wiki_pages_fts_update AFTER UPDATE ON wiki_pages
+  BEGIN
+    UPDATE wiki_pages_fts SET
+      title = new.title,
+      content = new.content,
+      summary = new.summary
+    WHERE rowid = new.id;
+  END;
 `);
 
 // Test suite
@@ -1325,6 +1378,85 @@ class TrackerTestSuite {
     }
   }
 
+  async testWikiListContentExclusion() {
+    try {
+      // Create a test wiki page with content
+      const testContent = `# Test Page
+
+This is a test wiki page with some content that should NOT be returned by list_wiki_pages.
+
+## Section
+
+More content here with various markdown elements.
+
+- List item 1
+- List item 2
+
+\`\`\`javascript
+console.log('test code');
+\`\`\`
+`;
+
+      const insertStmt = db.prepare(`
+        INSERT INTO wiki_pages (title, slug, content, summary, category, tags, status, created_by, current_owner)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const result = insertStmt.run(
+        'Test Page',
+        'test-page',
+        testContent,
+        'A test page summary',
+        'technical',
+        JSON.stringify(['test', 'documentation']),
+        'Published',
+        'developer',
+        'developer'
+      );
+
+      // Test the list_wiki_pages SQL query (simulated)
+      const listStmt = db.prepare(`
+        SELECT wp.id, wp.title, wp.slug, wp.summary, wp.category, wp.tags, wp.status, wp.version, wp.created_by, wp.current_owner, wp.assigned_to, wp.created_at, wp.updated_at,
+               COUNT(c.id) as comment_count
+        FROM wiki_pages wp
+        LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
+        GROUP BY wp.id
+        ORDER BY wp.updated_at DESC
+        LIMIT 50
+      `);
+
+      const pages = listStmt.all();
+
+      // Verify the page was retrieved
+      this.assert(pages.length >= 1, 'Should retrieve at least 1 page');
+
+      const page = pages.find(p => p.id === result.lastInsertRowid);
+      this.assert(page !== undefined, 'Should find the created page');
+
+      // Verify expected fields are present
+      this.assert(page.title === 'Test Page', 'Title should match');
+      this.assert(page.slug === 'test-page', 'Slug should match');
+      this.assert(page.summary === 'A test page summary', 'Summary should match');
+      this.assert(page.category === 'technical', 'Category should match');
+      this.assert(page.status === 'Published', 'Status should match');
+
+      // CRITICAL: Verify that content field is NOT present
+      this.assert(page.content === undefined, 'Content field should NOT be present in list results');
+      this.assert(!page.hasOwnProperty('content'), 'Page object should not have content property');
+
+      // Verify tags are parsed correctly
+      this.assert(page.tags !== undefined, 'Tags should be present');
+      const parsedTags = JSON.parse(page.tags);
+      this.assert(Array.isArray(parsedTags), 'Tags should be an array');
+      this.assert(parsedTags.includes('test'), 'Should include test tag');
+      this.assert(parsedTags.includes('documentation'), 'Should include documentation tag');
+
+      this.recordTest('testWikiListContentExclusion', true);
+    } catch (error) {
+      this.recordTest('testWikiListContentExclusion', false, error.message);
+    }
+  }
+
   async runAllTests() {
     this.log('Starting Tracker Test Suite...');
 
@@ -1342,6 +1474,9 @@ class TrackerTestSuite {
     await this.testListTasks();
     await this.testListBugs();
     await this.testListTestCases();
+
+    // Test wiki content exclusion
+    await this.testWikiListContentExclusion();
 
     // Test task dependencies (after list tests to avoid affecting counts)
     await this.testTaskDependencies();

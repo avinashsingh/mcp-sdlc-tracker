@@ -358,7 +358,7 @@ export function registerListWikiPages(server: any) {
           const ftsQuery = `${searchFields}:"${search_query}"*`;
 
           query = `
-            SELECT wp.*,
+            SELECT wp.id, wp.title, wp.slug, wp.summary, wp.category, wp.tags, wp.status, wp.version, wp.created_by, wp.current_owner, wp.assigned_to, wp.created_at, wp.updated_at,
                    COUNT(c.id) as comment_count,
                    bm25(wiki_pages_fts) as search_score,
                    highlight(wiki_pages_fts, 0, '<mark>', '</mark>') as title_highlight,
@@ -405,7 +405,7 @@ export function registerListWikiPages(server: any) {
         } else {
           // Regular listing query (no search)
           query = `
-            SELECT wp.*,
+            SELECT wp.id, wp.title, wp.slug, wp.summary, wp.category, wp.tags, wp.status, wp.version, wp.created_by, wp.current_owner, wp.assigned_to, wp.created_at, wp.updated_at,
                    COUNT(c.id) as comment_count
             FROM wiki_pages wp
             LEFT JOIN comments c ON c.entity_type = 'wiki_page' AND c.entity_id = wp.id
