@@ -1612,6 +1612,11 @@ server.registerTool(
         params.push(assigned_to);
       }
 
+      if (user_story_id) {
+        conditions.push('user_story_id = ?');
+        params.push(user_story_id);
+      }
+
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(' AND ')}`;
       }
@@ -1703,8 +1708,13 @@ server.registerTool(
       }
 
       if (assigned_to) {
-        conditions.push('tc.assigned_to = ?');
+        conditions.push('assigned_to = ?');
         params.push(assigned_to);
+      }
+
+      if (user_story_id) {
+        conditions.push('user_story_id = ?');
+        params.push(user_story_id);
       }
 
       if (conditions.length > 0) {
