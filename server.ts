@@ -1943,7 +1943,7 @@ server.registerTool(
           INSERT INTO status_transitions
           (entity_type, entity_id, from_status, to_status, transitioned_by)
           VALUES (?, ?, ?, ?, ?)
-        `).run(entity_type, entity_id, currentEntity.status, status, 'productmanager');
+        `).run(entity_type, entity_id, currentEntity.status, status, assigned_to);
       }
 
       // Record ownership transition if assigned_to changed
@@ -1952,7 +1952,7 @@ server.registerTool(
           INSERT INTO ownership_transitions
           (entity_type, entity_id, from_owner, to_owner, transitioned_by)
           VALUES (?, ?, ?, ?, ?)
-        `).run(entity_type, entity_id, currentEntity.assigned_to, assigned_to, 'productmanager');
+        `).run(entity_type, entity_id, currentEntity.assigned_to, assigned_to, assigned_to);
       }
 
       // Check for workflow intelligence when task is closed
