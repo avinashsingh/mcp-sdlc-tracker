@@ -14,6 +14,53 @@ function getDatabaseSafe(): any {
   return getDatabase();
 }
 
+// Simple Marqant-inspired compression functions
+export function compressMarkdownContent(content: string): string {
+  if (!content || typeof content !== 'string') {
+    return content;
+  }
+
+  let compressed = content;
+  let tokens: Array<{ tokenId: string; original: string }> = [];
+  let tokenCounter = 0;
+
+  // Common markdown patterns that can be tokenized
+  const patterns = [
+    { pattern: /```[\s\S]*?```/g, token: 'CODE_BLOCK' },
+    { pattern: /\[([^\]]+)\]\(([^)]+)\)/g, token: 'LINK' },
+    { pattern: /!\[([^\]]*)\]\(([^)]+)\)/g, token: 'IMAGE' },
+    { pattern: /#{1,6}\s+/g, token: 'HEADER' },
+    { pattern: /\*\*([^*]+)\*\*/g, token: 'BOLD' },
+    { pattern: /\*([^*]+)\*/g, token: 'ITALIC' },
+    { pattern: /`([^`]+)`/g, token: 'INLINE_CODE' },
+    { pattern: /-\s+/g, token: 'LIST_ITEM' },
+    { pattern: /\d+\.\s+/g, token: 'NUMBERED_ITEM' },
+    { pattern: />\s+/g, token: 'BLOCKQUOTE' },
+  ];
+
+  // Find and replace common patterns with tokens
+  patterns.forEach(({ pattern, token }, index) => {
+    compressed = compressed.replace(pattern, (match) => {
+      const tokenId = `~${token}_${index}_${tokenCounter++}~`;
+      tokens.push({ tokenId, original: match });
+      return tokenId;
+    });
+  });
+
+  // Create the compressed output with token map
+  const tokenMapJson = JSON.stringify(tokens);
+  const compressedOutput = `MARQANT_COMPRESSED\n${tokenMapJson}\n---CONTENT---\n${compressed}`;
+
+  return compressedOutput;
+}
+
+export function getCompressionRatio(original: string, compressed: string): number {
+  if (!original || !compressed || original.length === 0) {
+    return 0;
+  }
+  return Math.max(0, 1 - (compressed.length / original.length));
+}
+
 // Tool: Create Wiki Page
 export function registerCreateWikiPage(server: any) {
   server.registerTool(
@@ -447,10 +494,12 @@ export function registerGetWikiPage(server: any) {
     'get_wiki_page',
     {
       title: 'Get Wiki Page',
-      description: 'Get a wiki page by ID or slug with full content and metadata',
+      description: 'Get a wiki page by ID or slug with full content and metadata. Optionally compress content using Marqant compression for token reduction.',
       inputSchema: {
         wiki_page_id: z.number().optional(),
-        slug: z.string().optional()
+        slug: z.string().optional(),
+        compress: z.boolean().default(false).optional(),
+        compression_level: z.enum(['basic', 'semantic']).default('basic').optional()
       },
       outputSchema: {
         id: z.number(),
@@ -472,10 +521,13 @@ export function registerGetWikiPage(server: any) {
           entity_type: z.string(),
           entity_id: z.number(),
           link_type: z.string()
-        }))
+        })),
+        compressed_content: z.string().optional(),
+        compression_ratio: z.number().optional(),
+        compression_method: z.string().optional()
       }
     },
-    async ({ wiki_page_id, slug }) => {
+    async ({ wiki_page_id, slug, compress = false, compression_level = 'basic' }) => {
       try {
         const database = getDatabaseSafe();
 
@@ -518,6 +570,28 @@ export function registerGetWikiPage(server: any) {
           }
         } else {
           page.tags = [];
+        }
+
+        // Apply compression if requested
+        if (compress && page.content) {
+          try {
+            // Simple inline Marqant-inspired compression
+            const compressed = compressMarkdownContent(page.content);
+            const ratio = getCompressionRatio(page.content, compressed);
+
+            page.compressed_content = compressed;
+            page.compression_ratio = ratio;
+            page.compression_method = `marqant-${compression_level}`;
+
+            // Replace content with compressed version if compression is effective (>10% reduction)
+            if (ratio > 0.1) {
+              page.content = compressed;
+              page.content_type = 'compressed/markdown';
+            }
+          } catch (compressionError) {
+            console.warn('Marqant compression failed:', compressionError);
+            // Continue without compression
+          }
         }
 
         return {

@@ -7,7 +7,8 @@
     "start": "tsx server.ts",
     "dev": "tsx --watch server.ts",
     "test": "tsx tests/test-suite.ts",
-    "test:integration": "tsx tests/integration-test.ts"
+    "test:integration": "tsx tests/integration-test.ts",
+    "test:compression": "node tests/test-compression.js"
   },
   "keywords": [
     "mcp",
