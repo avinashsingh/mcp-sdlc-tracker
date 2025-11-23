@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
-- **Wiki System**: Integrated wiki for project documentation with entity linking and Marqant compression support
+- **Wiki System**: Integrated wiki for project documentation with entity linking
 - **Comments System**: Stakeholder feedback and collaboration on all entities with comment counts
 - **Epic Dependencies**: Epics can depend on other epics (similar to user story dependencies)
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
@@ -137,7 +137,7 @@ The system provides intelligent workflow guidance across the entire SDLC:
 - `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification
 - `update_wiki_page`: Update wiki page content, metadata, and tags
 - `list_wiki_pages`: List wiki pages with filtering by category, tags, or search terms
-- `get_wiki_page`: Get detailed wiki page content with linked entities and optional Marqant compression
+- `get_wiki_page`: Get detailed wiki page content with linked entities
 - `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
 
 ## Error Handling & Validation
