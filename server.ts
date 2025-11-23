@@ -1708,7 +1708,7 @@ server.registerTool(
       }
 
       if (status) {
-        conditions.push('tc.status = ?');
+        conditions.push('e.status = ?');
         params.push(status);
       }
 
