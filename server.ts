@@ -1118,7 +1118,7 @@ server.registerTool(
     description: 'Create multiple tasks in the SDLC tracker',
     inputSchema: {
       tasks: z.array(z.object({
-        user_story_id: z.number().optional(),
+        user_story_id: z.number(),
         title: z.string().min(1),
         description: z.string().optional(),
         estimated_hours: z.number().optional(),
@@ -1143,16 +1143,14 @@ server.registerTool(
 
       for (const task of tasks) {
         try {
-          // Validate foreign key if user_story_id provided
-          if (task.user_story_id) {
-            const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
-            if (!storyExists) {
-              results.push({
-                success: false,
-                error: `User story with ID ${task.user_story_id} does not exist`
-              });
-              continue;
-            }
+          // Validate foreign key - user_story_id is now required
+          const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(task.user_story_id);
+          if (!storyExists) {
+            results.push({
+              success: false,
+              error: `User story with ID ${task.user_story_id} does not exist`
+            });
+            continue;
           }
 
           const stmt = database.prepare(`
@@ -1232,7 +1230,16 @@ server.registerTool(
 
       for (const bug of bugs) {
         try {
-          // Validate foreign keys
+          // Validate that at least one parent relationship exists
+          if (!bug.user_story_id && !bug.task_id) {
+            results.push({
+              success: false,
+              error: `Bugs must be associated with either a user story or a task`
+            });
+            continue;
+          }
+
+          // Validate foreign keys if provided
           if (bug.user_story_id) {
             const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(bug.user_story_id);
             if (!storyExists) {
@@ -1307,7 +1314,7 @@ server.registerTool(
     description: 'Create multiple test cases in the SDLC tracker',
     inputSchema: {
       test_cases: z.array(z.object({
-        user_story_id: z.number().optional(),
+        user_story_id: z.number(),
         title: z.string().min(1),
         description: z.string().optional(),
         preconditions: z.string().optional(),
@@ -1333,16 +1340,14 @@ server.registerTool(
 
       for (const testCase of test_cases) {
         try {
-          // Validate foreign key if user_story_id provided
-          if (testCase.user_story_id) {
-            const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
-            if (!storyExists) {
-              results.push({
-                success: false,
-                error: `User story with ID ${testCase.user_story_id} does not exist`
-              });
-              continue;
-            }
+          // Validate foreign key - user_story_id is now required
+          const storyExists = database.prepare('SELECT id FROM user_stories WHERE id = ?').get(testCase.user_story_id);
+          if (!storyExists) {
+            results.push({
+              success: false,
+              error: `User story with ID ${testCase.user_story_id} does not exist`
+            });
+            continue;
           }
 
           const stmt = database.prepare(`
