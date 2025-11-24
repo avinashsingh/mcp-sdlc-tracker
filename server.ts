@@ -1876,7 +1876,7 @@ server.registerTool(
       }
 
       if (status) {
-        conditions.push('t.status = ?');
+        conditions.push('e.status = ?');
         params.push(status);
       }
 
