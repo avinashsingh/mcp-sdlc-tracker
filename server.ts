@@ -15,7 +15,7 @@ import { registerListBugs } from './tools/list-bugs.js';
 import { registerCreateComments } from './tools/create-comments.js';
 import { registerGetComments } from './tools/get-comments.js';
 import { registerListTestCases } from './tools/list-test-cases.js';
-import { registerGetKnowledgeGraph } from './tools/kg.js';
+import { registerGetKnowledgeGraph, get_knowledge_graph } from './tools/kg.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -957,7 +957,8 @@ server.registerTool(
       // Execute all CREATE TABLE statements
       createDatabaseSchema(db);
 
-      isInitialized = true;
+isInitialized = true;
+      projectPath = projectDir;
 
       // Try to open browser now that database is initialized
       if (httpPort) {
@@ -3078,7 +3079,7 @@ registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
 registerListTestCases(server, getDatabase);
 
-registerGetKnowledgeGraph(server, getRootPath, isInitialized);
+//registerGetKnowledgeGraph(server, getRootPath, () => isInitialized);
 
 registerAllWikiTools(server, getDatabase);
 

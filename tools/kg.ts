@@ -109,7 +109,7 @@ export function get_knowledge_graph(rootPath: string): any {
  * Get Knowledge Graph Tool
  * Retrieves the knowledge graph for the initialized project (creates it if it doesn't exist)
  */
-export function registerGetKnowledgeGraph(server: any, getRootPath: () => string | null, isInitialized: boolean) {
+export function registerGetKnowledgeGraph(server: any, getRootPath: () => string | null, getIsInitialized: () => boolean) {
   server.registerTool(
     'get_knowledge_graph',
     {
@@ -129,13 +129,13 @@ export function registerGetKnowledgeGraph(server: any, getRootPath: () => string
     },
     async () => {
       try {
-        if (!isInitialized || !getRootPath()) {
+        if (!getIsInitialized() || !getRootPath()) {
           throw new Error('Database not initialized. Please call the initialize tool first.');
         }
         const kg = get_knowledge_graph(getRootPath()!);
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(kg, null, 2) }],
+//          content: [{ type: 'text', text: JSON.stringify(kg) }],
           structuredContent: kg
         };
       } catch (error) {
