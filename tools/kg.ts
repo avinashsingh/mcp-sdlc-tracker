@@ -4,10 +4,6 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import * as os from 'os';
 
-// Note: projectPath is managed in server.ts
-declare const projectPath: string | null;
-declare const isInitialized: boolean;
-
 function generateTree(dir: string, prefix = ''): string {
   let result = '';
   const excludes = ['__pycache__', 'venv', 'env', 'build', 'dist', 'test', 'tests', '.git', 'analysis', '.mypy_cache', '.pytest_cache',
@@ -104,28 +100,16 @@ function generateKnowledgeGraph(rootPath: string): any {
   return result;
 }
 
-export function get_knowledge_graph(rootPath?: string): any {
-  let pathToUse: string;
-  if (rootPath) {
-    // Test mode or direct call
-    pathToUse = rootPath;
-  } else {
-    // Production mode
-    if (typeof isInitialized === 'undefined' || !isInitialized || !projectPath) {
-      throw new Error('Database not initialized. Please call the initialize tool first.');
-    }
-    pathToUse = projectPath;
-  }
-
+export function get_knowledge_graph(rootPath: string): any {
   // Generate knowledge graph at runtime
-  return generateKnowledgeGraph(pathToUse);
+  return generateKnowledgeGraph(rootPath);
 }
 
 /**
  * Get Knowledge Graph Tool
  * Retrieves the knowledge graph for the initialized project (creates it if it doesn't exist)
  */
-export function registerGetKnowledgeGraph(server: any) {
+export function registerGetKnowledgeGraph(server: any, isInitialized: boolean, projectPath: string | null) {
   server.registerTool(
     'get_knowledge_graph',
     {
@@ -145,7 +129,10 @@ export function registerGetKnowledgeGraph(server: any) {
     },
     async () => {
       try {
-        const kg = get_knowledge_graph();
+        if (!isInitialized || !projectPath) {
+          throw new Error('Database not initialized. Please call the initialize tool first.');
+        }
+        const kg = get_knowledge_graph(projectPath);
 
         return {
           content: [{ type: 'text', text: JSON.stringify(kg, null, 2) }],

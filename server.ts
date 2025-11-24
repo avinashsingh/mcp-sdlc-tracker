@@ -3073,7 +3073,7 @@ registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
 registerListTestCases(server, getDatabase);
 
-registerGetKnowledgeGraph(server);
+registerGetKnowledgeGraph(server, isInitialized, projectPath);
 
 registerAllWikiTools(server, getDatabase);
 
