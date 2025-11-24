@@ -24,6 +24,11 @@ const __dirname = path.dirname(__filename);
 // Global project path
 let projectPath: string | null = null;
 
+// Function to get the current project root path
+function getRootPath(): string | null {
+  return projectPath;
+}
+
 // Create Express app
 const app = express();
 app.set('view engine', 'ejs');
@@ -3073,7 +3078,7 @@ registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
 registerListTestCases(server, getDatabase);
 
-registerGetKnowledgeGraph(server, isInitialized, projectPath);
+registerGetKnowledgeGraph(server, getRootPath, isInitialized);
 
 registerAllWikiTools(server, getDatabase);
 
