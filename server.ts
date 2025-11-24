@@ -9,6 +9,11 @@ import { fileURLToPath } from 'url';
 import open from 'open';
 import { registerAllWikiTools } from './wiki-tools.js';
 import { createDatabaseSchema } from './database-schema.js';
+import { registerUpdateEntityStatus } from './tools/update-entity-status.js';
+import { registerCreateTestCases } from './tools/create-test-cases.js';
+import { registerListBugs } from './tools/list-bugs.js';
+import { registerCreateComments } from './tools/create-comments.js';
+import { registerGetComments } from './tools/get-comments.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -3044,6 +3049,13 @@ server.registerTool(
  );
 
 // Register all wiki tools
+// Register additional tools
+registerUpdateEntityStatus(server, getDatabase);
+registerCreateTestCases(server, getDatabase);
+registerListBugs(server, getDatabase);
+registerCreateComments(server, getDatabase);
+registerGetComments(server, getDatabase);
+
 registerAllWikiTools(server, getDatabase);
 
 // Connect to stdio transport and start HTTP server
