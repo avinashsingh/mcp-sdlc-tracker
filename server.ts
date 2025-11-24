@@ -14,6 +14,7 @@ import { registerCreateTestCases } from './tools/create-test-cases.js';
 import { registerListBugs } from './tools/list-bugs.js';
 import { registerCreateComments } from './tools/create-comments.js';
 import { registerGetComments } from './tools/get-comments.js';
+import { registerListTestCases } from './tools/list-test-cases.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -3055,6 +3056,7 @@ registerCreateTestCases(server, getDatabase);
 registerListBugs(server, getDatabase);
 registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
+registerListTestCases(server, getDatabase);
 
 registerAllWikiTools(server, getDatabase);
 
