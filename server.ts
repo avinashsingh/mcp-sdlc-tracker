@@ -1210,10 +1210,11 @@ server.registerTool(
         description: z.string().optional(),
         severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
         reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
-      assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
-      transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
-      phase: z.string().optional(),
-      phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional()
+        assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
+        transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
+        phase: z.string().optional(),
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional()
+      }))
     },
     outputSchema: {
       success: z.boolean(),
@@ -1223,6 +1224,7 @@ server.registerTool(
       new_status: z.string().optional(),
       old_assigned_to: z.string().nullable().optional(),
       new_assigned_to: z.string().nullable().optional(),
+      transitioned_by: z.string().optional(),
       error: z.string().optional(),
       workflow_suggestions: z.array(z.object({
         entity_type: z.string(),
