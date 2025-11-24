@@ -3,15 +3,16 @@ import Database from 'better-sqlite3';
 
 /**
  * List Test Cases Tool
- * Lists test cases with optional filtering by status and assignee
+ * Lists test cases with optional filtering by user story, status, and assignee
  */
 export function registerListTestCases(server: any, getDatabase: () => Database.Database) {
   server.registerTool(
     'list_test_cases',
     {
       title: 'List Test Cases',
-      description: 'List test cases with optional filtering by status, assignee',
+      description: 'List test cases with optional filtering by user story, status, assignee',
       inputSchema: {
+        user_story_id: z.number().optional(),
         status: z.enum(['New', 'Passed', 'Failed']).optional(),
         assigned_to: z.enum(['tester', 'productmanager']).optional(),
         limit: z.number().min(1).max(100).optional()
@@ -30,12 +31,17 @@ export function registerListTestCases(server: any, getDatabase: () => Database.D
         count: z.number()
       }
     },
-    async ({ status, assigned_to, limit = 50 }) => {
+    async ({ user_story_id, status, assigned_to, limit = 50 }) => {
       try {
         const database = getDatabase();
 
         let query = 'SELECT * FROM test_cases WHERE 1=1';
         const params: any[] = [];
+
+        if (user_story_id) {
+          query += ' AND user_story_id = ?';
+          params.push(user_story_id);
+        }
 
         if (status) {
           query += ' AND status = ?';
