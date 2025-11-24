@@ -15,10 +15,14 @@ import { registerListBugs } from './tools/list-bugs.js';
 import { registerCreateComments } from './tools/create-comments.js';
 import { registerGetComments } from './tools/get-comments.js';
 import { registerListTestCases } from './tools/list-test-cases.js';
+import { registerGetKnowledgeGraph } from './tools/kg.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Global project path
+let projectPath: string | null = null;
 
 // Create Express app
 const app = express();
@@ -148,6 +152,7 @@ app.post('/api/initialize', async (req, res) => {
     createDatabaseSchema(db);
 
     isInitialized = true;
+    projectPath = projectDir;
 
     // Try to open browser now that database is initialized
     if (httpPort) {
@@ -840,6 +845,16 @@ app.get('/api/test-case/:id', async (req, res) => {
     testCase.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('test_case', parseInt(id)).count;
 
     res.json(convertSQLiteBooleans(testCase));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get knowledge graph
+app.get('/api/get-knowledge-graph', async (req, res) => {
+  try {
+    const kg = get_knowledge_graph();
+    res.json(kg);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3057,6 +3072,8 @@ registerListBugs(server, getDatabase);
 registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
 registerListTestCases(server, getDatabase);
+
+registerGetKnowledgeGraph(server);
 
 registerAllWikiTools(server, getDatabase);
 

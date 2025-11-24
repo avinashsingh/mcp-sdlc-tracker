@@ -140,6 +140,9 @@ The system provides intelligent workflow guidance across the entire SDLC:
 - `get_wiki_page`: Get detailed wiki page content with linked entities
 - `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
 
+### Knowledge Graph Generation
+- `get_knowledge_graph`: Generate and return the knowledge graph for the initialized project, analyzing Python, JavaScript/TypeScript, and Java files to extract imports, classes, functions, and dependencies
+
 ## Error Handling & Validation
 
 The server includes comprehensive error handling and data validation:
@@ -195,6 +198,8 @@ The server also provides a REST API for web applications and direct HTTP access:
 - `GET /api/wiki`: List all wiki pages with metadata and tags
 - `GET /api/wiki/:id`: Get specific wiki page with full content and linked entities
 - `GET /api/wiki/search?q=term`: Search wiki pages by title or content
+- `GET /api/get-knowledge-graph`: Generate and retrieve knowledge graph data for the initialized project
+  - Response: JSON object with tree structure and file analysis
 
 ### Features
 - **Comment Counts**: All entities include `comment_count` field
@@ -205,6 +210,38 @@ The server also provides a REST API for web applications and direct HTTP access:
 ## Resources Available
 
 - `database_schema`: Provides information about the database schema and table structures
+
+## Knowledge Graph
+
+The knowledge graph tools analyze project codebases to create structured representations of the codebase:
+
+### Supported Languages
+- **Python** (.py): Extracts imports, classes, functions, and function calls
+- **JavaScript/TypeScript** (.js, .ts, .jsx, .tsx): Extracts ES6/CommonJS imports, classes, functions, and calls
+- **Java** (.java): Extracts imports, classes, methods, and method calls
+
+### Output Format
+The knowledge graph is saved as `.kg.json` in the project root and contains:
+```json
+{
+  "t": "Project tree structure as text",
+  "f": [
+    {
+      "f": "relative/file/path",
+      "i": ["import1", "import2"],
+      "c": ["Class1", "Class2"],
+      "fn": ["function1", "function2"],
+      "ca": ["call1", "call2"]
+    }
+  ]
+}
+```
+
+### Usage
+- Automatically excludes build directories, node_modules, and generated files
+- Requires project initialization first (like other tools)
+- Generates knowledge graph at runtime without storing files
+- Can be used for code analysis, dependency visualization, and project understanding
 
 ## Installation
 
@@ -599,6 +636,9 @@ Once connected to an MCP client, you can:
 15. "List epics with all dependencies resolved"
 16. "List user stories that have unresolved dependencies"
 17. "List tasks ready to start (dependencies resolved)"
+
+### Knowledge Graph Generation
+18. "Get knowledge graph data for the initialized project"
 
 ### Bug Status Management
 18. "Update bug 1 status to 'Review' (must come from 'In Progress')"
