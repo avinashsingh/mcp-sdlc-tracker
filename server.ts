@@ -1722,7 +1722,7 @@ server.registerTool(
       }
 
       if (status) {
-        conditions.push('status = ?');
+        conditions.push('e.status = ?');
         params.push(status);
       }
 
@@ -1876,7 +1876,7 @@ server.registerTool(
       }
 
       if (status) {
-        conditions.push('e.status = ?');
+        conditions.push('us.status = ?');
         params.push(status);
       }
 
