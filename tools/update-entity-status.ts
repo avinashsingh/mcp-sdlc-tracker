@@ -216,6 +216,18 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
               isError: true
             };
           }
+          if (entity_type === 'bug' && status === 'Fixed' && currentEntity.status !== 'Review') {
+            return {
+              content: [{ type: 'text', text: 'Cannot move bug to Fixed: must come from Review status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Cannot move bug to Fixed: must come from Review status'
+              },
+              isError: true
+            };
+          }
         }
 
         // Build update query
