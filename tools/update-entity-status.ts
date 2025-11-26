@@ -148,7 +148,7 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
             }
 
             if (status === 'UAT') {
-              const issues = [];
+              const issues: string[] = [];
 
               // Check 1: All tasks must be closed
               const openTasks = database.prepare(`
@@ -201,6 +201,33 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 };
               }
             }
+
+            if (status === 'Closed') {
+              if (currentEntity.status !== 'UAT') {
+                return {
+                  content: [{ type: 'text', text: 'Cannot move user story to Closed: must come from UAT status' }],
+                  structuredContent: {
+                    success: false,
+                    entity_type,
+                    entity_id,
+                    error: 'Cannot move user story to Closed: must come from UAT status'
+                  },
+                  isError: true
+                };
+              }
+              if (transitioned_by !== 'productmanager') {
+                return {
+                  content: [{ type: 'text', text: 'Only productmanager can close user stories' }],
+                  structuredContent: {
+                    success: false,
+                    entity_type,
+                    entity_id,
+                    error: 'Only productmanager can close user stories'
+                  },
+                  isError: true
+                };
+              }
+            }
           }
 
           // Bug validation
@@ -231,8 +258,8 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
         }
 
         // Build update query
-        const updateFields = [];
-        const updateValues = [];
+        const updateFields: string[] = [];
+        const updateValues: any[] = [];
 
         if (status !== undefined) {
           updateFields.push('status = ?');
@@ -303,7 +330,7 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
         transaction();
 
         // Check for workflow intelligence when task is closed
-        const workflow_suggestions = [];
+        const workflow_suggestions: Array<{entity_type: string, entity_id: number, suggested_action: string, reason: string, suggested_status: string}> = [];
         if (entity_type === 'task' && status === 'Closed') {
           const taskInfo = database.prepare(`
             SELECT user_story_id FROM tasks WHERE id = ?
