@@ -26,7 +26,12 @@ export function registerListTestCases(server: any, getDatabase: () => Database.D
           status: z.string(),
           assigned_to: z.string().nullable(),
           created_at: z.string(),
-          updated_at: z.string()
+          updated_at: z.string(),
+          wiki_links: z.array(z.object({
+            wiki_page_id: z.number(),
+            title: z.string(),
+            link_type: z.string()
+          }))
         })),
         count: z.number()
       }
@@ -58,6 +63,17 @@ export function registerListTestCases(server: any, getDatabase: () => Database.D
 
         const stmt = database.prepare(query);
         const test_cases = stmt.all(...params);
+
+        // Add wiki links to each test case
+        for (const test_case of test_cases) {
+          const wikiLinkRows = database.prepare(`
+            SELECT wpl.wiki_page_id, wp.title, wpl.link_type
+            FROM wiki_page_links wpl
+            JOIN wiki_pages wp ON wpl.wiki_page_id = wp.id
+            WHERE wpl.entity_type = 'test_case' AND wpl.entity_id = ?
+          `).all(test_case.id);
+          test_case.wiki_links = wikiLinkRows;
+        }
 
         const output = {
           test_cases,

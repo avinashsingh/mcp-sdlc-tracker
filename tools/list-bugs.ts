@@ -32,7 +32,13 @@ export function registerListBugs(server: any, getDatabase: () => Database.Databa
           reported_by: z.string(),
           assigned_to: z.string().nullable(),
           created_at: z.string(),
-          updated_at: z.string()
+          updated_at: z.string(),
+          comment_count: z.number(),
+          wiki_links: z.array(z.object({
+            wiki_page_id: z.number(),
+            title: z.string(),
+            link_type: z.string()
+          }))
         })),
         total_count: z.number(),
         filtered_count: z.number()
@@ -86,11 +92,20 @@ export function registerListBugs(server: any, getDatabase: () => Database.Databa
         const stmt = database.prepare(query);
         const bugs = stmt.all(...params);
 
-        // Add comment count to each bug
+        // Add comment count and wiki links to each bug
         for (const bug of bugs) {
           bug.comment_count = database.prepare(`
             SELECT COUNT(*) as count FROM comments WHERE entity_type = 'bug' AND entity_id = ?
           `).get(bug.id).count;
+
+          // Get linked wiki pages
+          const wikiLinkRows = database.prepare(`
+            SELECT wpl.wiki_page_id, wp.title, wpl.link_type
+            FROM wiki_page_links wpl
+            JOIN wiki_pages wp ON wpl.wiki_page_id = wp.id
+            WHERE wpl.entity_type = 'bug' AND wpl.entity_id = ?
+          `).all(bug.id);
+          bug.wiki_links = wikiLinkRows;
         }
 
         const output = {

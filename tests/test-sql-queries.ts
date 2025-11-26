@@ -132,20 +132,29 @@ class SQLQueryTests {
   // Test: list_user_stories with status filter should not have wrong table alias
   async test_list_user_stories_status_filter() {
     console.log('Testing list_user_stories with status filter...');
-    
+
     const result = await tracker_list_user_stories({ status: 'In Progress' });
-    
+
     if (!result || !result.data || !Array.isArray(result.data)) {
       throw new Error('Expected valid result with data array');
     }
-    
+
     // Should find at least one in-progress story
     const inProgressStories = result.data.filter((story: any) => story.status === 'In Progress');
     if (inProgressStories.length === 0) {
       throw new Error('Expected to find at least one in-progress story');
     }
-    
+
     console.log(`Found ${inProgressStories.length} in-progress stories`);
+
+    // Check if wiki_links is present
+    if (result.data.length > 0) {
+      const story = result.data[0];
+      if (!('wiki_links' in story)) {
+        throw new Error('wiki_links field is missing from user story');
+      }
+      console.log(`wiki_links present: ${JSON.stringify(story.wiki_links)}`);
+    }
   }
 
   // Test: list_user_stories with epic filter

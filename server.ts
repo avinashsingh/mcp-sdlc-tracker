@@ -1722,7 +1722,12 @@ server.registerTool(
         comment_count: z.number(),
         dependencies: z.array(z.number()),
         dependent_epics: z.array(z.number()),
-        dependencies_resolved: z.boolean()
+        dependencies_resolved: z.boolean(),
+        wiki_links: z.array(z.object({
+          wiki_page_id: z.number(),
+          title: z.string(),
+          link_type: z.string()
+        }))
       })),
       total_count: z.number(),
       filtered_count: z.number()
@@ -1797,6 +1802,15 @@ server.registerTool(
         } else {
           epic.dependencies_resolved = true; // No dependencies means all are "resolved"
         }
+
+        // Get linked wiki pages
+        const wikiLinkRows = database.prepare(`
+          SELECT wpl.wiki_page_id, wp.title, wpl.link_type
+          FROM wiki_page_links wpl
+          JOIN wiki_pages wp ON wpl.wiki_page_id = wp.id
+          WHERE wpl.entity_type = 'epic' AND wpl.entity_id = ?
+        `).all(epic.id);
+        epic.wiki_links = wikiLinkRows;
       }
 
       // Apply dependencies_resolved filter if specified
@@ -1862,7 +1876,12 @@ server.registerTool(
         comment_count: z.number(),
         dependencies: z.array(z.number()),
         dependent_stories: z.array(z.number()),
-        dependencies_resolved: z.boolean()
+        dependencies_resolved: z.boolean(),
+        wiki_links: z.array(z.object({
+          wiki_page_id: z.number(),
+          title: z.string(),
+          link_type: z.string()
+        }))
       })),
       total_count: z.number(),
       filtered_count: z.number()
@@ -1951,6 +1970,15 @@ server.registerTool(
         } else {
           story.dependencies_resolved = true; // No dependencies means all are "resolved"
         }
+
+        // Get linked wiki pages
+        const wikiLinkRows = database.prepare(`
+          SELECT wpl.wiki_page_id, wp.title, wpl.link_type
+          FROM wiki_page_links wpl
+          JOIN wiki_pages wp ON wpl.wiki_page_id = wp.id
+          WHERE wpl.entity_type = 'user_story' AND wpl.entity_id = ?
+        `).all(story.id);
+        story.wiki_links = wikiLinkRows;
       }
 
       // Apply dependencies_resolved filter if specified
@@ -1996,7 +2024,33 @@ server.registerTool(
       limit: z.number().default(50)
     },
     outputSchema: {
-      data: z.array(z.any()),
+      data: z.array(z.object({
+        id: z.number(),
+        user_story_id: z.number().nullable(),
+        title: z.string(),
+        description: z.string().nullable(),
+        status: z.string(),
+        created_by: z.string(),
+        current_owner: z.string(),
+        assigned_to: z.string().nullable(),
+        estimated_hours: z.number().nullable(),
+        actual_hours: z.number().nullable(),
+        phase: z.string().nullable(),
+        phase_status: z.string().nullable(),
+        created_at: z.string(),
+        updated_at: z.string(),
+        closed_at: z.string().nullable(),
+        priority: z.string(),
+        comment_count: z.number(),
+        dependencies: z.array(z.number()),
+        dependent_tasks: z.array(z.number()),
+        dependencies_resolved: z.boolean(),
+        wiki_links: z.array(z.object({
+          wiki_page_id: z.number(),
+          title: z.string(),
+          link_type: z.string()
+        }))
+      })),
       total_count: z.number(),
       filtered_count: z.number()
     }
@@ -2093,6 +2147,15 @@ server.registerTool(
         } else {
           task.dependencies_resolved = true; // No dependencies means all are "resolved"
         }
+
+        // Get linked wiki pages
+        const wikiLinkRows = database.prepare(`
+          SELECT wpl.wiki_page_id, wp.title, wpl.link_type
+          FROM wiki_page_links wpl
+          JOIN wiki_pages wp ON wpl.wiki_page_id = wp.id
+          WHERE wpl.entity_type = 'task' AND wpl.entity_id = ?
+        `).all(task.id);
+        task.wiki_links = wikiLinkRows;
       }
 
       // Apply dependencies_resolved filter if specified
