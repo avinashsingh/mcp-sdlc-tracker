@@ -16,6 +16,8 @@ import { registerCreateComments } from './tools/create-comments.js';
 import { registerGetComments } from './tools/get-comments.js';
 import { registerListTestCases } from './tools/list-test-cases.js';
 import { registerGetKnowledgeGraph, get_knowledge_graph } from './tools/kg.js';
+import { registerReadFullFile } from './tools/read-full-file.js';
+import { registerWriteFullFile } from './tools/write-full-file.js';
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -3141,6 +3143,8 @@ registerListBugs(server, getDatabase);
 registerCreateComments(server, getDatabase);
 registerGetComments(server, getDatabase);
 registerListTestCases(server, getDatabase);
+//registerReadFullFile(server);
+//registerWriteFullFile(server);
 
 //registerGetKnowledgeGraph(server, getRootPath, () => isInitialized);
 
