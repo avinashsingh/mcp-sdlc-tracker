@@ -141,9 +141,10 @@ The system provides intelligent workflow guidance across the entire SDLC:
 ### Wiki Management
 - `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification (titles limited to 256 characters)
 - `update_wiki_page`: Update wiki page content, metadata, and tags (titles limited to 256 characters)
-- `list_wiki_pages`: List wiki pages with filtering by category, tags, or search terms
+- `list_wiki_pages`: List wiki pages with filtering by category, status, tags, or search terms
 - `get_wiki_page`: Get detailed wiki page content with linked entities
 - `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
+- `archive_wiki_page`: Archive wiki pages (moves to Archived status)
 
 ### Knowledge Graph Generation
 - `get_knowledge_graph`: Generate and return the knowledge graph for the initialized project, analyzing Python, JavaScript/TypeScript, and Java files to extract imports, classes, functions, and dependencies

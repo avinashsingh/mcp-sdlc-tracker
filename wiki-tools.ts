@@ -653,6 +653,89 @@ export function registerManageWikiLinks(server: any) {
   );
 }
 
+// Tool: Archive Wiki Page
+export function registerArchiveWikiPage(server: any) {
+  server.registerTool(
+    'archive_wiki_page',
+    {
+      title: 'Archive Wiki Page',
+      description: 'Archive a wiki page (moves to Archived status)',
+      inputSchema: {
+        wiki_page_id: z.number(),
+        archive_reason: z.string().optional()
+      },
+      outputSchema: {
+        success: z.boolean(),
+        wiki_page_id: z.number(),
+        archived_at: z.string(),
+        archived_by: z.string()
+      }
+    },
+    async ({ wiki_page_id, archive_reason }) => {
+      try {
+        const database = getDatabaseSafe();
+
+        // Get current page data
+        const page = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
+        if (!page) {
+          return {
+            content: [{ type: 'text', text: 'Wiki page not found' }],
+            isError: true
+          };
+        }
+
+        // Check if already archived
+        if (page.status === 'Archived') {
+          return {
+            content: [{ type: 'text', text: 'Wiki page is already archived' }],
+            isError: true
+          };
+        }
+
+        // Archive the page
+        const archiveStmt = database.prepare(`
+          UPDATE wiki_pages
+          SET status = 'Archived', archived_at = CURRENT_TIMESTAMP, archived_by = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `);
+
+        // Use a default archiver since we don't have user context in this tool
+        // In a real implementation, this would come from the authenticated user
+        const archivedBy = 'productmanager'; // Default to product manager for now
+
+        const result = archiveStmt.run(archivedBy, wiki_page_id);
+
+        if (result.changes === 0) {
+          return {
+            content: [{ type: 'text', text: 'Failed to archive wiki page' }],
+            isError: true
+          };
+        }
+
+        // Get the archived timestamp
+        const archivedPage = database.prepare('SELECT archived_at FROM wiki_pages WHERE id = ?').get(wiki_page_id);
+
+        const output = {
+          success: true,
+          wiki_page_id,
+          archived_at: archivedPage.archived_at,
+          archived_by: archivedBy
+        };
+
+        return {
+          content: [{ type: 'text', text: `Wiki page ${wiki_page_id} archived successfully` }],
+          structuredContent: output
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: `Error archiving wiki page: ${error.message}` }],
+          isError: true
+        };
+      }
+    }
+  );
+}
+
 // Register all wiki tools
 export function registerAllWikiTools(server: any, dbGetter: () => any) {
   // Set the database accessor function
@@ -664,4 +747,5 @@ export function registerAllWikiTools(server: any, dbGetter: () => any) {
   registerListWikiPages(server);
   registerGetWikiPage(server);
   registerManageWikiLinks(server);
+  registerArchiveWikiPage(server);
 }
