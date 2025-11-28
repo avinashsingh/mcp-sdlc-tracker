@@ -6,15 +6,16 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
-- **Wiki System**: Integrated wiki for project documentation with entity linking
+- **Wiki System**: Integrated wiki for project documentation with entity linking and 256-character title limits
 - **Comments System**: Stakeholder feedback and collaboration on all entities with comment counts
 - **Epic Dependencies**: Epics can depend on other epics (similar to user story dependencies)
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
+- **Automatic Status Changes**: Bugs on closed stories reopen them, stories moving to QA reopen their epics
 - **Audit Trail**: Ownership and status transition tracking
 - **Data Validation**: Comprehensive input validation and foreign key constraint checking
 - **Boolean Field Handling**: Proper boolean conversion for archived fields (true/false instead of 0/1)
 - **HTTP API**: REST endpoints for database initialization, SDLC entities, and wiki pages
-- **Web UI**: Tabbed dashboard interface with SDLC tracker and wiki sections
+- **Web UI**: Tabbed dashboard interface with SDLC tracker and wiki sections showing entity numbers
 - **Error Handling**: Clear error messages for invalid operations and constraint violations
 - **SQLite Backend**: Uses SQLite with better-sqlite3 for efficient operations
 
@@ -59,6 +60,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 - `manage_story_dependencies`: Add or remove dependencies for multiple user stories in bulk
 - `manage_epic_dependencies`: Add or remove dependencies for multiple epics in bulk
 - `manage_task_dependencies`: Add or remove dependencies for multiple tasks in bulk (tasks must belong to same user story)
+- **Automatic Status Changes**: Bugs created on closed stories automatically reopen them to QA, stories moving to QA automatically reopen their parent epics
 
 #### Intelligent Workflow Suggestions
 The system provides intelligent workflow guidance across the entire SDLC:
@@ -70,6 +72,9 @@ The system provides intelligent workflow guidance across the entire SDLC:
   - "Fixed" bugs: Suggest QA verification
   - "Closed" bugs: Check if regression tests exist, suggest creating if missing
   - "Open" bugs: Suggest developer reassignment if assigned to tester
+- **Automatic Status Changes**: Beyond suggestions, the system automatically handles workflow transitions:
+  - Bugs created on closed stories automatically reopen them to "QA" status
+  - Stories moving to "QA" automatically reopen their parent epics from "Closed" to "Open"
 - **User Story Validation**: Prevents moving user stories to "In Progress" without acceptance criteria and test cases
 - **Proactive Guidance**: Helps teams maintain proper SDLC workflow without manual tracking
 
@@ -134,8 +139,8 @@ The system provides intelligent workflow guidance across the entire SDLC:
 - `get_comments`: Retrieve comments for a specific SDLC entity
 
 ### Wiki Management
-- `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification
-- `update_wiki_page`: Update wiki page content, metadata, and tags
+- `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification (titles limited to 256 characters)
+- `update_wiki_page`: Update wiki page content, metadata, and tags (titles limited to 256 characters)
 - `list_wiki_pages`: List wiki pages with filtering by category, tags, or search terms
 - `get_wiki_page`: Get detailed wiki page content with linked entities
 - `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
@@ -336,7 +341,8 @@ npm start
 
 **Web UI Features:**
 - **Tabbed Interface**: Separate SDLC Tracker and Wiki sections
-- **Dashboard Overview**: Visual representation of all SDLC entities
+- **Dashboard Overview**: Visual representation of all SDLC entities with clear entity identification
+- **Entity Number Display**: All cards show entity type and ID (e.g., "User Story #5: Implement authentication")
 - **Wiki Browsing**: Card-based wiki page display with metadata and tags
 - **Dependency Visualization**: Clickable dependency links for epics and user stories
 - **Comment Counts**: Display of comment counts on all entities
@@ -677,6 +683,9 @@ The server is written in TypeScript and uses:
 
 ### Recent Improvements
 
+- **Automatic Workflow Transitions**: Bugs on closed stories reopen them to QA, stories moving to QA reopen their epics
+- **Enhanced UI Entity Display**: Dashboard cards show entity type and numbers (e.g., "User Story #5: Title")
+- **Wiki Title Validation**: 256-character limit on wiki page titles for better usability
 - **Wiki System**: Complete wiki functionality with Markdown pages, tags, categories, and SDLC entity linking
 - **Tabbed Web UI**: Enhanced dashboard with separate SDLC Tracker and Wiki sections
 - **Wiki API**: Full REST API for wiki page management and search
