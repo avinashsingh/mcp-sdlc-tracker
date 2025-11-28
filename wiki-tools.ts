@@ -32,7 +32,7 @@ export function registerCreateWikiPage(server: any) {
       title: 'Create Wiki Page',
       description: 'Create a new wiki page with content, category, and tags',
       inputSchema: {
-        title: z.string().min(1),
+        title: z.string().min(1).max(256),
         content: z.string().min(1),
         summary: z.string().optional(),
         tags: z.array(z.string()).optional(),
@@ -135,7 +135,7 @@ export function registerUpdateWikiPage(server: any) {
       description: 'Update an existing wiki page content, metadata, and links',
       inputSchema: {
         wiki_page_id: z.number(),
-        title: z.string().min(1).optional(),
+        title: z.string().min(1).max(256).optional(),
         content: z.string().min(1).optional(),
         summary: z.string().optional(),
         tags: z.array(z.string()).optional(),

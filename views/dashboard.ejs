@@ -390,6 +390,17 @@
       return routeMap[type] || type;
     }
 
+    function getEntityTypeLabel(type) {
+      const labelMap = {
+        'epic': 'Epic',
+        'user_story': 'User Story',
+        'task': 'Task',
+        'bug': 'Bug',
+        'test_case': 'Test Case'
+      };
+      return labelMap[type] || type.replace('_', ' ');
+    }
+
     function sortEntities(entities, sortBy, sortOrder) {
       return entities.sort((a, b) => {
         let aValue, bValue;
@@ -530,7 +541,7 @@
                 <i class="bi ${iconClass} text-muted me-2"></i>
                 <div class="flex-grow-1">
                   <div class="d-flex align-items-center mb-1">
-                    <span class="fw-medium text-truncate">${entity.title || entity.description || `ID: ${entity.id}`}</span>
+                    <span class="fw-medium text-truncate">${getEntityTypeLabel(type)} #${entity.id}${entity.title || entity.description ? ': ' + (entity.title || entity.description) : ''}</span>
                     <span class="badge bg-${badgeClass} ms-2 status-badge">${entity.status}</span>
                     ${prioritySeverityBadge}
                     ${phaseInfo}
@@ -795,7 +806,7 @@
     function renderEntityDetail(entity, entityType) {
       const statusBadge = getStatusBadge(entity.status);
       const entityIcon = getEntityIcon(entityType);
-      const title = entity.title || entity.description || `ID: ${entity.id}`;
+      const title = `${getEntityTypeLabel(entityType)} #${entity.id}${entity.title || entity.description ? ': ' + (entity.title || entity.description) : ''}`;
 
       document.title = `${title} - SDLC Tracker`;
 

@@ -145,6 +145,23 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                   isError: true
                 };
               }
+
+              // Check and update epic status if needed when story moves to QA
+              const storyInfo = database.prepare('SELECT epic_id FROM user_stories WHERE id = ?').get(entity_id);
+              if (storyInfo?.epic_id) {
+                const epicStatus = database.prepare('SELECT status FROM epics WHERE id = ?').get(storyInfo.epic_id);
+                if (epicStatus?.status === 'Closed') {
+                  // Update epic status to 'Open' - this will be included in the main transaction below
+                  database.prepare('UPDATE epics SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+                    .run('Open', storyInfo.epic_id);
+
+                  // Record epic status transition
+                  database.prepare(`
+                    INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+                    VALUES (?, ?, ?, ?, ?)
+                  `).run('epic', storyInfo.epic_id, 'Closed', 'Open', transitioned_by);
+                }
+              }
             }
 
             if (status === 'UAT') {

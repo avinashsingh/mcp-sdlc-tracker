@@ -16,7 +16,7 @@ export function registerCreateBugs(server: any, getDatabase: () => Database.Data
           user_story_id: z.number(),
           task_id: z.number().optional(),
           title: z.string().min(1),
-          description: z.string().optional(),
+           description: z.string().min(1),
           severity: z.enum(['Critical', 'High', 'Medium', 'Low']),
           reported_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
           assigned_to: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']).optional(),
@@ -80,6 +80,41 @@ export function registerCreateBugs(server: any, getDatabase: () => Database.Data
               bug.phase || null,
               bug.phase_status || null
             );
+
+            // Check if story status needs to be updated from Closed to QA
+            if (bug.user_story_id) {
+              const storyInfo = database.prepare('SELECT status, epic_id FROM user_stories WHERE id = ?').get(bug.user_story_id);
+              if (storyInfo?.status === 'Closed') {
+                // Update both story and potentially epic status in transaction
+                const updateTransaction = database.transaction(() => {
+                  // Update story status to QA
+                  database.prepare('UPDATE user_stories SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+                    .run('QA', bug.user_story_id);
+
+                  // Record story status transition
+                  database.prepare(`
+                    INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+                    VALUES (?, ?, ?, ?, ?)
+                  `).run('user_story', bug.user_story_id, 'Closed', 'QA', bug.reported_by);
+
+                  // Check and update epic if needed
+                  if (storyInfo.epic_id) {
+                    const epicStatus = database.prepare('SELECT status FROM epics WHERE id = ?').get(storyInfo.epic_id);
+                    if (epicStatus?.status === 'Closed') {
+                      database.prepare('UPDATE epics SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+                        .run('Open', storyInfo.epic_id);
+
+                      // Record epic status transition
+                      database.prepare(`
+                        INSERT INTO status_transitions (entity_type, entity_id, from_status, to_status, transitioned_by)
+                        VALUES (?, ?, ?, ?, ?)
+                      `).run('epic', storyInfo.epic_id, 'Closed', 'Open', bug.reported_by);
+                    }
+                  }
+                });
+                updateTransaction();
+              }
+            }
 
             results.push({
               success: true,
