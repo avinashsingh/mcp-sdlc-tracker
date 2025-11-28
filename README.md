@@ -345,6 +345,7 @@ npm start
 - **Dashboard Overview**: Visual representation of all SDLC entities with clear entity identification
 - **Entity Number Display**: All cards show entity type and ID (e.g., "User Story #5: Implement authentication")
 - **Wiki Browsing**: Card-based wiki page display with metadata and tags
+- **Wiki Archive**: Archive wiki pages with confirmation dialogs and optional reason tracking
 - **Dependency Visualization**: Clickable dependency links for epics and user stories
 - **Comment Counts**: Display of comment counts on all entities
 - **Interactive Navigation**: Click entities to view detailed information
@@ -686,6 +687,7 @@ The server is written in TypeScript and uses:
 
 - **Automatic Workflow Transitions**: Bugs on closed stories reopen them to QA, stories moving to QA reopen their epics
 - **Enhanced UI Entity Display**: Dashboard cards show entity type and numbers (e.g., "User Story #5: Title")
+- **Wiki Archive UI**: Archive wiki pages from the web interface with confirmation dialogs
 - **Wiki Title Validation**: 256-character limit on wiki page titles for better usability
 - **Wiki System**: Complete wiki functionality with Markdown pages, tags, categories, and SDLC entity linking
 - **Tabbed Web UI**: Enhanced dashboard with separate SDLC Tracker and Wiki sections
