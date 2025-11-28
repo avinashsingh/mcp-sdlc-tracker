@@ -924,6 +924,17 @@ app.get('/api/get-knowledge-graph', async (req, res) => {
   }
 });
 
+// Catch-all route for frontend routing (SPA support)
+app.get('*', (req, res) => {
+  if (!isInitialized) {
+    return res.redirect('/init');
+  }
+
+  res.render('dashboard', {
+    title: 'SDLC Tracker Dashboard'
+  });
+});
+
 // Function to attempt browser opening
 async function tryOpenBrowser(url: string) {
   if (!isInitialized) {
