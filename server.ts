@@ -709,6 +709,62 @@ app.post('/api/wiki', async (req, res) => {
   }
 });
 
+// Archive wiki page endpoint
+app.post('/api/archive-wiki', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const database = getDatabase();
+    const { wiki_page_id, archive_reason } = req.body;
+
+    if (!wiki_page_id) {
+      return res.status(400).json({ error: 'wiki_page_id is required' });
+    }
+
+    // Check if wiki page exists
+    const page = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
+    if (!page) {
+      return res.status(404).json({ error: 'Wiki page not found' });
+    }
+
+    // Check if already archived
+    if (page.status === 'Archived') {
+      return res.status(400).json({ error: 'Wiki page is already archived' });
+    }
+
+    // Archive the page
+    const stmt = database.prepare(`
+      UPDATE wiki_pages
+      SET status = 'Archived', archived_at = CURRENT_TIMESTAMP, archived_by = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    // Use a default archiver since we don't have user context in this endpoint
+    // In a real implementation, this would come from authenticated user
+    const archivedBy = 'productmanager';
+
+    const result = stmt.run(archivedBy, wiki_page_id);
+
+    if (result.changes === 0) {
+      return res.status(500).json({ error: 'Failed to archive wiki page' });
+    }
+
+    // Get the archived timestamp
+    const archivedPage = database.prepare('SELECT archived_at FROM wiki_pages WHERE id = ?').get(wiki_page_id);
+
+    res.json({
+      success: true,
+      wiki_page_id,
+      archived_at: archivedPage.archived_at,
+      archived_by: archivedBy
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/epic/:id', async (req, res) => {
   try {
     if (!isInitialized) {

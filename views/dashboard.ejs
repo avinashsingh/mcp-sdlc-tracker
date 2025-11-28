@@ -1303,11 +1303,14 @@
                   </div>
                 ` : ''}
 
-                <div class="mt-3">
-                  <button class="btn btn-sm btn-outline-primary" onclick="navigateTo('/wiki/${page.id}')">
-                    <i class="bi bi-eye me-1"></i>View
-                  </button>
-                </div>
+                 <div class="mt-3 d-flex gap-2">
+                   <button class="btn btn-sm btn-outline-primary" onclick="navigateTo('/wiki/${page.id}')">
+                     <i class="bi bi-eye me-1"></i>View
+                   </button>
+                   <button class="btn btn-sm btn-outline-warning" onclick="archiveWikiPage(${page.id}, '${page.title.replace(/'/g, "\\'")}')">
+                     <i class="bi bi-archive me-1"></i>Archive
+                   </button>
+                 </div>
               </div>
             </div>
           </div>
@@ -1400,11 +1403,14 @@
             </div>
             ${pageData.summary ? `<p class="text-muted">${pageData.summary}</p>` : ''}
           </div>
-          <div>
-            <button class="btn btn-outline-secondary btn-sm" onclick="navigateTo('/wiki')">
-              <i class="bi bi-arrow-left me-1"></i>Back to Wiki
-            </button>
-          </div>
+           <div class="d-flex gap-2">
+             <button class="btn btn-outline-secondary btn-sm" onclick="navigateTo('/wiki')">
+               <i class="bi bi-arrow-left me-1"></i>Back to Wiki
+             </button>
+             <button class="btn btn-outline-warning btn-sm" onclick="archiveWikiPage(${pageData.id}, '${pageData.title.replace(/'/g, "\\'")}')">
+               <i class="bi bi-archive me-1"></i>Archive Page
+             </button>
+           </div>
         </div>
 
         ${pageData.tags && pageData.tags.length > 0 ? `
@@ -1662,6 +1668,111 @@
         }
       });
     });
+
+    // Global variable to store wiki page ID for archiving
+    let wikiPageToArchive = null;
+
+    // Archive Wiki Page Functions
+    function archiveWikiPage(pageId, pageTitle) {
+      wikiPageToArchive = pageId;
+      document.getElementById('archiveWikiTitle').textContent = pageTitle;
+      document.getElementById('archiveWikiReason').value = '';
+
+      const modal = new bootstrap.Modal(document.getElementById('archiveWikiModal'));
+      modal.show();
+    }
+
+    async function confirmArchiveWikiPage() {
+      if (!wikiPageToArchive) return;
+
+      const reason = document.getElementById('archiveWikiReason').value.trim();
+      const confirmBtn = document.getElementById('confirmArchiveWikiBtn');
+
+      // Disable button and show loading state
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Archiving...';
+
+      try {
+        // Prepare the request payload
+        const payload = {
+          wiki_page_id: wikiPageToArchive
+        };
+        if (reason) {
+          payload.archive_reason = reason;
+        }
+
+        // Make the API call to archive the wiki page
+        const response = await fetch('/api/archive-wiki', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          // Close modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('archiveWikiModal'));
+          modal.hide();
+
+          // Show success message
+          showArchiveToast('Wiki page archived successfully', 'success');
+
+          // Refresh the current view after a short delay
+          setTimeout(() => {
+            const currentPath = window.location.pathname;
+            if (currentPath.startsWith('/wiki/')) {
+              // If we're on a wiki page detail, go back to wiki list
+              navigateTo('/wiki');
+            } else {
+              // If we're on the wiki list, reload to update the list
+              loadWikiPages();
+            }
+          }, 1500);
+        } else {
+          showArchiveToast('Failed to archive wiki page: ' + (result.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        console.error('Error archiving wiki page:', error);
+        showArchiveToast('Error archiving wiki page: ' + error.message, 'error');
+      } finally {
+        // Re-enable button and reset text
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i class="bi bi-archive me-1"></i>Archive Page';
+        wikiPageToArchive = null;
+      }
+    }
+
+    function showArchiveToast(message, type = 'info') {
+      const toast = document.getElementById('archiveToast');
+      const toastTitle = document.getElementById('archiveToastTitle');
+      const toastMessage = document.getElementById('archiveToastMessage');
+      const toastIcon = document.getElementById('archiveToastIcon');
+
+      toastMessage.textContent = message;
+
+      // Reset classes
+      toastIcon.className = 'bi me-2';
+
+      // Set styling based on type
+      if (type === 'success') {
+        toastTitle.textContent = 'Success';
+        toastIcon.classList.add('bi-check-circle-fill', 'text-success');
+        toast.classList.add('bg-success', 'text-white');
+      } else if (type === 'error') {
+        toastTitle.textContent = 'Error';
+        toastIcon.classList.add('bi-exclamation-triangle-fill', 'text-danger');
+        toast.classList.add('bg-danger', 'text-white');
+      } else {
+        toastTitle.textContent = 'Info';
+        toastIcon.classList.add('bi-info-circle-fill', 'text-info');
+      }
+
+      const bsToast = new bootstrap.Toast(toast);
+      bsToast.show();
+    }
   </script>
 
   <!-- Comments Modal -->
@@ -1679,6 +1790,51 @@
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Archive Wiki Page Modal -->
+  <div class="modal fade" id="archiveWikiModal" tabindex="-1" aria-labelledby="archiveWikiModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="archiveWikiModalLabel">
+            <i class="bi bi-archive text-warning me-2"></i>Archive Wiki Page
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to archive <strong id="archiveWikiTitle"></strong>?</p>
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Warning:</strong> Archived pages will be hidden from default listings but can still be viewed and restored if needed.
+          </div>
+          <div class="mb-3">
+            <label for="archiveWikiReason" class="form-label">Archive Reason (Optional)</label>
+            <textarea class="form-control" id="archiveWikiReason" rows="3" placeholder="Why are you archiving this page? (e.g., outdated information, duplicate content, etc.)"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+          </button>
+          <button type="button" class="btn btn-warning" id="confirmArchiveWikiBtn" onclick="confirmArchiveWikiPage()">
+            <i class="bi bi-archive me-1"></i>Archive Page
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+    <div id="archiveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <i class="bi me-2" id="archiveToastIcon"></i>
+        <strong class="me-auto" id="archiveToastTitle">Notification</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body" id="archiveToastMessage"></div>
     </div>
   </div>
 </body>
