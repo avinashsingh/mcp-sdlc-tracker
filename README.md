@@ -276,11 +276,13 @@ Before using any other tools, you must initialize the database. You have two opt
 #### Option 1: MCP Tool (Recommended for AI Agents)
 1. Call the `initialize` tool and provide your current working directory path (e.g., "/Users/username/project")
 2. The tool will create `.project_tracker.db` in that directory and set up all necessary tables
+3. The tool will automatically create or update `.gitignore` to exclude the database file from version control
 
 #### Option 2: HTTP API (For Web Applications)
 1. Start the server: `npm start`
 2. Call `POST /api/initialize` with: `{"currentProjectLocation": "/path/to/project"}`
 3. The API will create `.project_tracker.db` and establish the database connection
+4. The API will automatically create or update `.gitignore` to exclude the database file from version control
 
 ### Connecting to MCP Clients
 
@@ -689,6 +691,7 @@ The server is written in TypeScript and uses:
 - **Enhanced UI Entity Display**: Dashboard cards show entity type and numbers (e.g., "User Story #5: Title")
 - **Wiki Archive UI**: Archive wiki pages from the web interface with confirmation dialogs
 - **Wiki Title Validation**: 256-character limit on wiki page titles for better usability
+- **Automatic .gitignore Management**: Database initialization automatically creates/updates .gitignore to exclude database files
 - **Wiki System**: Complete wiki functionality with Markdown pages, tags, categories, and SDLC entity linking
 - **Tabbed Web UI**: Enhanced dashboard with separate SDLC Tracker and Wiki sections
 - **Wiki API**: Full REST API for wiki page management and search
