@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import Database from 'better-sqlite3';
 import { z } from 'zod';
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, readFileSync, writeFileSync } from 'fs';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1020,15 +1020,38 @@ server.registerTool(
         };
       }
 
-      // Initialize database
-      db = new Database(dbFilePath);
-      dbPath = dbFilePath;
+       // Initialize database
+       db = new Database(dbFilePath);
+       dbPath = dbFilePath;
 
-      // Execute all CREATE TABLE statements
-      createDatabaseSchema(db);
+       // Execute all CREATE TABLE statements
+       createDatabaseSchema(db);
 
-isInitialized = true;
-      projectPath = projectDir;
+       // Manage .gitignore file
+       const gitignorePath = `${projectDir}/.gitignore`;
+       let gitignoreContent = '';
+
+       if (existsSync(gitignorePath)) {
+         // Read existing .gitignore
+         gitignoreContent = readFileSync(gitignorePath, 'utf8');
+       }
+
+       // Check if .project_tracker.db is already in .gitignore
+       const dbEntry = '.project_tracker.db';
+       if (!gitignoreContent.includes(dbEntry)) {
+         // Add the database file to .gitignore
+         if (gitignoreContent && !gitignoreContent.endsWith('\n')) {
+           gitignoreContent += '\n';
+         }
+         gitignoreContent += `${dbEntry}\n`;
+
+         // Write back to .gitignore
+         writeFileSync(gitignorePath, gitignoreContent, 'utf8');
+         console.error(`✅ Added '${dbEntry}' to .gitignore`);
+       }
+
+       isInitialized = true;
+       projectPath = projectDir;
 
       // Try to open browser now that database is initialized
       if (httpPort) {
