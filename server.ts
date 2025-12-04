@@ -842,6 +842,88 @@ app.get('/api/story/:id', async (req, res) => {
   }
 });
 
+// Update user story content
+app.post('/api/user-stories/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const { title, description, story_points } = req.body;
+    const database = getDatabase();
+
+    // Check if story exists and is not archived
+    const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(parseInt(id));
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        error: 'User story not found'
+      });
+    }
+
+    if (story.archived) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot update archived user story'
+      });
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: any[] = [];
+    const changes: any[] = [];
+
+    if (title !== undefined && title !== story.title) {
+      updates.push('title = ?');
+      params.push(title);
+      changes.push({ field: 'title', old_value: story.title, new_value: title });
+    }
+
+    if (description !== undefined && description !== story.description) {
+      updates.push('description = ?');
+      params.push(description);
+      changes.push({ field: 'description', old_value: story.description, new_value: description });
+    }
+
+    if (story_points !== undefined && story_points !== story.story_points) {
+      updates.push('story_points = ?');
+      params.push(story_points);
+      changes.push({ field: 'story_points', old_value: story.story_points, new_value: story_points });
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No changes to update'
+      });
+    }
+
+    // Add updated_at timestamp
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(parseInt(id));
+
+    const sql = `UPDATE user_stories SET ${updates.join(', ')} WHERE id = ?`;
+    const result = database.prepare(sql).run(...params);
+
+    if (result.changes > 0) {
+      res.json({
+        success: true,
+        story_id: parseInt(id),
+        changes
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update user story'
+      });
+    }
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get task details
 app.get('/api/task/:id', async (req, res) => {
   try {
@@ -861,6 +943,328 @@ app.get('/api/task/:id', async (req, res) => {
     task.comment_count = database.prepare('SELECT COUNT(*) as count FROM comments WHERE entity_type = ? AND entity_id = ?').get('task', parseInt(id)).count;
 
     res.json(convertSQLiteBooleans(task));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update task content
+app.post('/api/tasks/:id', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const { title, description, estimated_hours, priority } = req.body;
+    const database = getDatabase();
+
+    // Check if task exists
+    const task = database.prepare('SELECT * FROM tasks WHERE id = ?').get(parseInt(id));
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Task not found'
+      });
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: any[] = [];
+    const changes: any[] = [];
+
+    if (title !== undefined && title !== task.title) {
+      updates.push('title = ?');
+      params.push(title);
+      changes.push({ field: 'title', old_value: task.title, new_value: title });
+    }
+
+    if (description !== undefined && description !== task.description) {
+      updates.push('description = ?');
+      params.push(description);
+      changes.push({ field: 'description', old_value: task.description, new_value: description });
+    }
+
+    if (estimated_hours !== undefined && estimated_hours !== task.estimated_hours) {
+      updates.push('estimated_hours = ?');
+      params.push(estimated_hours);
+      changes.push({ field: 'estimated_hours', old_value: task.estimated_hours, new_value: estimated_hours });
+    }
+
+    if (priority !== undefined && priority !== task.priority) {
+      updates.push('priority = ?');
+      params.push(priority);
+      changes.push({ field: 'priority', old_value: task.priority, new_value: priority });
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No changes to update'
+      });
+    }
+
+    // Add updated_at timestamp
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(parseInt(id));
+
+    const sql = `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`;
+    const result = database.prepare(sql).run(...params);
+
+    if (result.changes > 0) {
+      res.json({
+        success: true,
+        task_id: parseInt(id),
+        changes
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update task'
+      });
+    }
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update user story status and assignment
+app.post('/api/user-stories/:id/status', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const { status, assigned_to, transitioned_by, phase, phase_status } = req.body;
+    const database = getDatabase();
+
+    // Check if story exists and is not archived
+    const story = database.prepare('SELECT * FROM user_stories WHERE id = ?').get(parseInt(id));
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        error: 'User story not found'
+      });
+    }
+
+    if (story.archived) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot update archived user story'
+      });
+    }
+
+    // Validate required fields
+    if (!status && !assigned_to) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least status or assigned_to must be provided'
+      });
+    }
+
+    if (!transitioned_by) {
+      return res.status(400).json({
+        success: false,
+        error: 'transitioned_by is required'
+      });
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+
+    if (assigned_to !== undefined) {
+      updates.push('assigned_to = ?');
+      params.push(assigned_to);
+      updates.push('current_owner = ?');
+      params.push(assigned_to);
+    }
+
+    if (phase !== undefined) {
+      updates.push('phase = ?');
+      params.push(phase);
+    }
+
+    if (phase_status !== undefined) {
+      updates.push('phase_status = ?');
+      params.push(phase_status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No changes to update'
+      });
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(parseInt(id));
+
+    // Apply update in a transaction to ensure atomicity
+    const transaction = database.transaction(() => {
+      const updateStmt = database.prepare(`
+        UPDATE user_stories
+        SET ${updates.join(', ')}
+        WHERE id = ?
+      `);
+      updateStmt.run(...params);
+
+      // Record status transition if status changed
+      if (status && story.status !== status) {
+        database.prepare(`
+          INSERT INTO status_transitions
+          (entity_type, entity_id, from_status, to_status, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run('user_story', parseInt(id), story.status, status, transitioned_by);
+      }
+
+      // Record ownership transition if assigned_to changed
+      if (assigned_to !== undefined && story.assigned_to !== assigned_to) {
+        database.prepare(`
+          INSERT INTO ownership_transitions
+          (entity_type, entity_id, from_owner, to_owner, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run('user_story', parseInt(id), story.assigned_to, assigned_to, transitioned_by);
+      }
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      entity_type: 'user_story',
+      entity_id: parseInt(id),
+      old_status: story.status,
+      new_status: status || story.status,
+      old_assigned_to: story.assigned_to,
+      new_assigned_to: assigned_to !== undefined ? assigned_to : story.assigned_to,
+      transitioned_by
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update task status and assignment
+app.post('/api/tasks/:id/status', async (req, res) => {
+  try {
+    if (!isInitialized) {
+      return res.status(503).json({ error: 'Database not initialized' });
+    }
+
+    const { id } = req.params;
+    const { status, assigned_to, transitioned_by, phase, phase_status } = req.body;
+    const database = getDatabase();
+
+    // Check if task exists
+    const task = database.prepare('SELECT * FROM tasks WHERE id = ?').get(parseInt(id));
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Task not found'
+      });
+    }
+
+    // Validate required fields
+    if (!status && !assigned_to) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least status or assigned_to must be provided'
+      });
+    }
+
+    if (!transitioned_by) {
+      return res.status(400).json({
+        success: false,
+        error: 'transitioned_by is required'
+      });
+    }
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+
+    if (assigned_to !== undefined) {
+      updates.push('assigned_to = ?');
+      params.push(assigned_to);
+      updates.push('current_owner = ?');
+      params.push(assigned_to);
+    }
+
+    if (phase !== undefined) {
+      updates.push('phase = ?');
+      params.push(phase);
+    }
+
+    if (phase_status !== undefined) {
+      updates.push('phase_status = ?');
+      params.push(phase_status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No changes to update'
+      });
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(parseInt(id));
+
+    // Apply update in a transaction to ensure atomicity
+    const transaction = database.transaction(() => {
+      const updateStmt = database.prepare(`
+        UPDATE tasks
+        SET ${updates.join(', ')}
+        WHERE id = ?
+      `);
+      updateStmt.run(...params);
+
+      // Record status transition if status changed
+      if (status && task.status !== status) {
+        database.prepare(`
+          INSERT INTO status_transitions
+          (entity_type, entity_id, from_status, to_status, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run('task', parseInt(id), task.status, status, transitioned_by);
+      }
+
+      // Record ownership transition if assigned_to changed
+      if (assigned_to !== undefined && task.assigned_to !== assigned_to) {
+        database.prepare(`
+          INSERT INTO ownership_transitions
+          (entity_type, entity_id, from_owner, to_owner, transitioned_by)
+          VALUES (?, ?, ?, ?, ?)
+        `).run('task', parseInt(id), task.assigned_to, assigned_to, transitioned_by);
+      }
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      entity_type: 'task',
+      entity_id: parseInt(id),
+      old_status: task.status,
+      new_status: status || task.status,
+      old_assigned_to: task.assigned_to,
+      new_assigned_to: assigned_to !== undefined ? assigned_to : task.assigned_to,
+      transitioned_by
+    });
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

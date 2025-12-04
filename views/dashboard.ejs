@@ -523,6 +523,12 @@
           <i class="bi bi-dash"></i>
         </button>` : '';
 
+      // Edit button for user stories and tasks
+      const editButton = (type === 'user_story' || type === 'task') ?
+        `<button class="btn btn-sm btn-outline-primary me-2" onclick="event.stopPropagation(); openEditModal('${type}', ${entity.id})" title="Edit ${getEntityTypeLabel(type)}">
+          <i class="bi bi-pencil"></i>
+        </button>` : '';
+
       // Data attributes for priority highlighting
       const dataAttrs = [];
       if (type === 'task' && entity.priority === 'high') {
@@ -538,6 +544,7 @@
             <div class="d-flex justify-content-between align-items-center">
               <div class="d-flex align-items-center flex-grow-1">
                 ${expandButton}
+                ${editButton}
                 <i class="bi ${iconClass} text-muted me-2"></i>
                 <div class="flex-grow-1">
                   <div class="d-flex align-items-center mb-1">
@@ -1773,6 +1780,231 @@
       const bsToast = new bootstrap.Toast(toast);
       bsToast.show();
     }
+
+    // Edit Modal Functions
+    let currentEditingEntity = null;
+    let currentEditingType = null;
+
+    function openEditModal(type, entityId) {
+      currentEditingType = type;
+      currentEditingEntity = entityId;
+
+      if (type === 'user_story') {
+        loadUserStoryForEdit(entityId);
+        const modal = new bootstrap.Modal(document.getElementById('editUserStoryModal'));
+        modal.show();
+      } else if (type === 'task') {
+        loadTaskForEdit(entityId);
+        const modal = new bootstrap.Modal(document.getElementById('editTaskModal'));
+        modal.show();
+      }
+    }
+
+    async function loadUserStoryForEdit(storyId) {
+      try {
+        const response = await fetch(`/api/story/${storyId}`);
+        if (!response.ok) throw new Error('Failed to load user story');
+        
+        const story = await response.json();
+        
+        // Populate form fields
+        document.getElementById('editUserStoryId').value = story.id;
+        document.getElementById('editUserStoryTitle').value = story.title || '';
+        document.getElementById('editUserStoryDescription').value = story.description || '';
+        document.getElementById('editUserStoryPoints').value = story.story_points || '';
+        document.getElementById('editUserStoryStatus').value = story.status || 'New';
+        document.getElementById('editUserStoryAssignedTo').value = story.assigned_to || '';
+      } catch (error) {
+        console.error('Error loading user story for edit:', error);
+        showEditToast('Failed to load user story', 'error');
+      }
+    }
+
+    async function loadTaskForEdit(taskId) {
+      try {
+        const response = await fetch(`/api/task/${taskId}`);
+        if (!response.ok) throw new Error('Failed to load task');
+        
+        const task = await response.json();
+        
+        // Populate form fields
+        document.getElementById('editTaskId').value = task.id;
+        document.getElementById('editTaskTitle').value = task.title || '';
+        document.getElementById('editTaskDescription').value = task.description || '';
+        document.getElementById('editTaskEstimatedHours').value = task.estimated_hours || '';
+        document.getElementById('editTaskStatus').value = task.status || 'New';
+        document.getElementById('editTaskPriority').value = task.priority || 'medium';
+        document.getElementById('editTaskAssignedTo').value = task.assigned_to || '';
+      } catch (error) {
+        console.error('Error loading task for edit:', error);
+        showEditToast('Failed to load task', 'error');
+      }
+    }
+
+    async function saveUserStory() {
+      const storyId = document.getElementById('editUserStoryId').value;
+      const title = document.getElementById('editUserStoryTitle').value.trim();
+      const description = document.getElementById('editUserStoryDescription').value.trim();
+      const storyPoints = document.getElementById('editUserStoryPoints').value;
+
+      // Basic validation
+      if (!title) {
+        showEditToast('Title is required', 'error');
+        return;
+      }
+
+      if (title.length > 200) {
+        showEditToast('Title must be less than 200 characters', 'error');
+        return;
+      }
+
+      if (description && description.length > 2000) {
+        showEditToast('Description must be less than 2000 characters', 'error');
+        return;
+      }
+
+      if (storyPoints && (isNaN(storyPoints) || parseInt(storyPoints) < 0)) {
+        showEditToast('Story points must be a positive number', 'error');
+        return;
+      }
+
+      const formData = {
+        title: title,
+        description: description || null,
+        story_points: storyPoints ? parseInt(storyPoints) : null
+      };
+
+      try {
+        const response = await fetch(`/api/user-stories/${storyId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+          showEditToast('User story updated successfully', 'success');
+          
+          // Close modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('editUserStoryModal'));
+          modal.hide();
+          
+          // Refresh data
+          await loadData();
+        } else {
+          showEditToast(result.error || 'Failed to update user story', 'error');
+        }
+      } catch (error) {
+        console.error('Error saving user story:', error);
+        showEditToast('Error saving user story', 'error');
+      }
+    }
+
+    async function saveTask() {
+      const taskId = document.getElementById('editTaskId').value;
+      const title = document.getElementById('editTaskTitle').value.trim();
+      const description = document.getElementById('editTaskDescription').value.trim();
+      const estimatedHours = document.getElementById('editTaskEstimatedHours').value;
+      const priority = document.getElementById('editTaskPriority').value;
+
+      // Basic validation
+      if (!title) {
+        showEditToast('Title is required', 'error');
+        return;
+      }
+
+      if (title.length > 200) {
+        showEditToast('Title must be less than 200 characters', 'error');
+        return;
+      }
+
+      if (description && description.length > 2000) {
+        showEditToast('Description must be less than 2000 characters', 'error');
+        return;
+      }
+
+      if (estimatedHours && (isNaN(estimatedHours) || parseFloat(estimatedHours) < 0)) {
+        showEditToast('Estimated hours must be a positive number', 'error');
+        return;
+      }
+
+      const formData = {
+        title: title,
+        description: description || null,
+        estimated_hours: estimatedHours ? parseFloat(estimatedHours) : null,
+        priority: priority
+      };
+
+      try {
+        const response = await fetch(`/api/tasks/${taskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+          showEditToast('Task updated successfully', 'success');
+          
+          // Close modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('editTaskModal'));
+          modal.hide();
+          
+          // Refresh data
+          await loadData();
+        } else {
+          showEditToast(result.error || 'Failed to update task', 'error');
+        }
+      } catch (error) {
+        console.error('Error saving task:', error);
+        showEditToast('Error saving task', 'error');
+      }
+    }
+
+    function showEditToast(message, type = 'info') {
+      const toast = document.getElementById('archiveToast');
+      const toastTitle = document.getElementById('archiveToastTitle');
+      const toastMessage = document.getElementById('archiveToastMessage');
+      const toastIcon = document.getElementById('archiveToastIcon');
+
+      toastMessage.textContent = message;
+
+      // Reset classes
+      toastIcon.className = 'bi me-2';
+
+      // Set styling based on type
+      if (type === 'success') {
+        toastTitle.textContent = 'Success';
+        toastIcon.classList.add('bi-check-circle-fill', 'text-success');
+        toast.classList.add('bg-success', 'text-white');
+      } else if (type === 'error') {
+        toastTitle.textContent = 'Error';
+        toastIcon.classList.add('bi-exclamation-triangle-fill', 'text-danger');
+        toast.classList.add('bg-danger', 'text-white');
+      } else {
+        toastTitle.textContent = 'Info';
+        toastIcon.classList.add('bi-info-circle-fill', 'text-info');
+      }
+
+      const bsToast = new bootstrap.Toast(toast);
+      bsToast.show();
+    }
+
+    // Add event listeners for save buttons
+    document.addEventListener('DOMContentLoaded', () => {
+      const saveUserStoryBtn = document.getElementById('saveUserStoryBtn');
+      const saveTaskBtn = document.getElementById('saveTaskBtn');
+
+      if (saveUserStoryBtn) {
+        saveUserStoryBtn.addEventListener('click', saveUserStory);
+      }
+
+      if (saveTaskBtn) {
+        saveTaskBtn.addEventListener('click', saveTask);
+      }
+    });
   </script>
 
   <!-- Comments Modal -->
@@ -1837,5 +2069,155 @@
       <div class="toast-body" id="archiveToastMessage"></div>
     </div>
   </div>
+
+  <!-- Edit User Story Modal -->
+  <div class="modal fade" id="editUserStoryModal" tabindex="-1" aria-labelledby="editUserStoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editUserStoryModalLabel">
+            <i class="bi bi-card-text me-2"></i>Edit User Story
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editUserStoryForm">
+            <input type="hidden" id="editUserStoryId">
+            <div class="row">
+              <div class="col-md-8">
+                <div class="mb-3">
+                  <label for="editUserStoryTitle" class="form-label">Title</label>
+                  <input type="text" class="form-control" id="editUserStoryTitle" required>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editUserStoryPoints" class="form-label">Story Points</label>
+                  <input type="number" class="form-control" id="editUserStoryPoints" min="0">
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="editUserStoryDescription" class="form-label">Description</label>
+              <textarea class="form-control" id="editUserStoryDescription" rows="4"></textarea>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label for="editUserStoryStatus" class="form-label">Status</label>
+                  <select class="form-select" id="editUserStoryStatus">
+                    <option value="New">New</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="QA">QA</option>
+                    <option value="UAT">UAT</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label for="editUserStoryAssignedTo" class="form-label">Assigned To</label>
+                  <select class="form-select" id="editUserStoryAssignedTo">
+                    <option value="">Not assigned</option>
+                    <option value="productmanager">Product Manager</option>
+                    <option value="architect">Architect</option>
+                    <option value="developer">Developer</option>
+                    <option value="tester">Tester</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveUserStoryBtn">
+            <i class="bi bi-check-circle me-1"></i>Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Task Modal -->
+  <div class="modal fade" id="editTaskModal" tabindex="-1" aria-labelledby="editTaskModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editTaskModalLabel">
+            <i class="bi bi-check-circle me-2"></i>Edit Task
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editTaskForm">
+            <input type="hidden" id="editTaskId">
+            <div class="row">
+              <div class="col-md-8">
+                <div class="mb-3">
+                  <label for="editTaskTitle" class="form-label">Title</label>
+                  <input type="text" class="form-control" id="editTaskTitle" required>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editTaskEstimatedHours" class="form-label">Estimated Hours</label>
+                  <input type="number" class="form-control" id="editTaskEstimatedHours" min="0" step="0.5">
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="editTaskDescription" class="form-label">Description</label>
+              <textarea class="form-control" id="editTaskDescription" rows="4"></textarea>
+            </div>
+            <div class="row">
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editTaskStatus" class="form-label">Status</label>
+                  <select class="form-select" id="editTaskStatus">
+                    <option value="New">New</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Review">Review</option>
+                    <option value="Closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editTaskPriority" class="form-label">Priority</label>
+                  <select class="form-select" id="editTaskPriority">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editTaskAssignedTo" class="form-label">Assigned To</label>
+                  <select class="form-select" id="editTaskAssignedTo">
+                    <option value="">Not assigned</option>
+                    <option value="architect">Architect</option>
+                    <option value="developer">Developer</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+          </button>
+          <button type="button" class="btn btn-primary" id="saveTaskBtn">
+            <i class="bi bi-check-circle me-1"></i>Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
