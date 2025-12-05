@@ -50,7 +50,7 @@ export function createDatabaseSchema(database: Database): void {
       user_story_id INTEGER,
       title TEXT NOT NULL,
       description TEXT,
-      status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
+      status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Prepare', 'In Progress', 'Review', 'Closed')),
       created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
       current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
       assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),

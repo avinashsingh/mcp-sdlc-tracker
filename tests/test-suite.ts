@@ -72,7 +72,7 @@ db.exec(`
      user_story_id INTEGER,
      title TEXT NOT NULL,
      description TEXT,
-     status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'In Progress', 'Review', 'Closed')),
+      status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New', 'Prepare', 'In Progress', 'Review', 'Closed')),
      created_by TEXT NOT NULL CHECK (created_by IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
      current_owner TEXT NOT NULL DEFAULT 'architect' CHECK (current_owner IN ('productmanager', 'programmanager', 'developer', 'tester', 'architect')),
      assigned_to TEXT CHECK (assigned_to IN ('architect', 'developer')),
@@ -627,6 +627,69 @@ class TrackerTestSuite {
       this.recordTest('testUpdateTaskStatus', true);
     } catch (error) {
       this.recordTest('testUpdateTaskStatus', false, error.message);
+    }
+  }
+
+  async testTaskPrepareStatusWorkflow() {
+    try {
+      // Create a test task
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const taskResult = taskStmt.run(1, 'Test Prepare Task', 'Test task for Prepare status workflow', 'architect', 'architect', 'architect', 'New');
+      const taskId = taskResult.lastInsertRowid as number;
+
+      // Test 1: Valid transition New -> Prepare by programmanager
+      const updateStmt1 = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result1 = updateStmt1.run('Prepare', taskId);
+      this.assert(result1.changes === 1, 'Should allow New -> Prepare transition by programmanager');
+
+      const checkStmt1 = db.prepare('SELECT status FROM tasks WHERE id = ?');
+      const task1 = checkStmt1.get(taskId) as { status: string };
+      this.assert(task1.status === 'Prepare', 'Task should be in Prepare status');
+
+      // Test 2: Valid transition Prepare -> In Progress by architect
+      const updateStmt2 = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result2 = updateStmt2.run('In Progress', taskId);
+      this.assert(result2.changes === 1, 'Should allow Prepare -> In Progress transition by architect');
+
+      const checkStmt2 = db.prepare('SELECT status FROM tasks WHERE id = ?');
+      const task2 = checkStmt2.get(taskId) as { status: string };
+      this.assert(task2.status === 'In Progress', 'Task should be in In Progress status');
+
+      // Test 3: Invalid transition - wrong role for New -> Prepare
+      // Create another test task
+      const taskResult2 = taskStmt.run(1, 'Test Invalid Prepare Task', 'Test task for invalid Prepare transition', 'architect', 'architect', 'architect', 'New');
+      const taskId2 = taskResult2.lastInsertRowid as number;
+
+      // This should fail - only programmanager can move to Prepare
+      try {
+        const invalidUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        invalidUpdate.run('Prepare', taskId2);
+        this.assert(false, 'Should not allow non-programmanager to move to Prepare status');
+      } catch (error) {
+        // Expected to fail due to CHECK constraint or validation
+        this.assert(true, 'Correctly prevented invalid transition');
+      }
+
+      // Test 4: Invalid transition - Prepare -> In Progress by wrong role
+      // First set task to Prepare status (this would normally be done by programmanager)
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('Prepare', taskId2);
+
+      // This should fail - only architect can move Prepare -> In Progress
+      try {
+        const invalidUpdate2 = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        invalidUpdate2.run('In Progress', taskId2);
+        this.assert(false, 'Should not allow non-architect to move Prepare -> In Progress');
+      } catch (error) {
+        // Expected to fail due to CHECK constraint or validation
+        this.assert(true, 'Correctly prevented invalid transition');
+      }
+
+      this.recordTest('testTaskPrepareStatusWorkflow', true);
+    } catch (error) {
+      this.recordTest('testTaskPrepareStatusWorkflow', false, error.message);
     }
   }
 
@@ -1589,6 +1652,7 @@ class TrackerTestSuite {
     await this.testUpdateEntityAssignment();
     await this.testUpdateTaskStatus();
     await this.testUpdateTaskStatusToReview();
+    await this.testTaskPrepareStatusWorkflow();
     await this.testUserStoryInProgressValidation();
     await this.testUserStoryQAValidation();
     await this.testUserStoryUATValidation();

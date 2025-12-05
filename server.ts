@@ -2044,7 +2044,7 @@ server.registerTool(
     inputSchema: {
       task_id: z.number().optional(),
       user_story_id: z.number().optional(),
-      status: z.enum(['New', 'In Progress', 'Review', 'Closed']).optional(),
+      status: z.enum(['New', 'Prepare', 'In Progress', 'Review', 'Closed']).optional(),
       assigned_to: z.enum(['architect', 'developer']).optional(),
       depends_on: z.number().optional(), // Filter tasks that depend on this task ID
       depended_by: z.number().optional(), // Filter tasks that are depended on by this task ID

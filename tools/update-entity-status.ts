@@ -274,6 +274,61 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
           }
         }
 
+        // Task validation
+        if (entity_type === 'task') {
+          if (status === 'Prepare' && currentEntity.status !== 'New') {
+            return {
+              content: [{ type: 'text', text: 'Cannot move task to Prepare: must come from New status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Cannot move task to Prepare: must come from New status'
+              },
+              isError: true
+            };
+          }
+
+          if (status === 'Prepare' && transitioned_by !== 'programmanager') {
+            return {
+              content: [{ type: 'text', text: 'Only programmanager can move task to Prepare status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Only programmanager can move task to Prepare status'
+              },
+              isError: true
+            };
+          }
+
+          if (status === 'In Progress' && currentEntity.status === 'Prepare' && transitioned_by !== 'architect') {
+            return {
+              content: [{ type: 'text', text: 'Only architect can move task from Prepare to In Progress' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Only architect can move task from Prepare to In Progress'
+              },
+              isError: true
+            };
+          }
+
+          if (status === 'In Progress' && currentEntity.status !== 'Prepare' && currentEntity.status !== 'New') {
+            return {
+              content: [{ type: 'text', text: 'Cannot move task to In Progress: must come from New or Prepare status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Cannot move task to In Progress: must come from New or Prepare status'
+              },
+              isError: true
+            };
+          }
+        }
+
         // Build update query
         const updateFields: string[] = [];
         const updateValues: any[] = [];
