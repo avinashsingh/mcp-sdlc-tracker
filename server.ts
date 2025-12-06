@@ -1072,6 +1072,101 @@ app.post('/api/user-stories/:id/status', async (req, res) => {
       });
     }
 
+    // Validate status transitions
+    if (status !== undefined && status !== story.status) {
+      // Check for QA transition requirements
+      if (status === 'QA') {
+        const openTasks = database.prepare(`
+          SELECT id FROM tasks
+          WHERE user_story_id = ? AND status != 'Closed'
+        `).all(parseInt(id));
+
+        if (openTasks.length > 0) {
+          const openTaskIds = openTasks.map(task => task.id);
+          return res.status(400).json({
+            success: false,
+            error: `Cannot move user story to QA: ${openTasks.length} tasks are not closed (IDs: ${openTaskIds.join(', ')})`,
+            open_task_ids: openTaskIds
+          });
+        }
+      }
+
+      // Check for UAT transition requirements
+      if (status === 'UAT') {
+        const issues: string[] = [];
+
+        // Check 1: All tasks must be closed
+        const openTasks = database.prepare(`
+          SELECT id FROM tasks
+          WHERE user_story_id = ? AND status != 'Closed'
+        `).all(parseInt(id));
+
+        if (openTasks.length > 0) {
+          const openTaskIds = openTasks.map(t => t.id);
+          issues.push(`${openTasks.length} tasks not closed (IDs: ${openTaskIds.join(', ')})`);
+        }
+
+        // Check 2: All bugs must be closed
+        const openBugs = database.prepare(`
+          SELECT id FROM bugs
+          WHERE user_story_id = ? AND status != 'Closed'
+        `).all(parseInt(id));
+
+        if (openBugs.length > 0) {
+          const openBugIds = openBugs.map(b => b.id);
+          issues.push(`${openBugs.length} bugs not closed (IDs: ${openBugIds.join(', ')})`);
+        }
+
+        // Check 3: All test cases must have passed
+        const failedTestCases = database.prepare(`
+          SELECT id FROM test_cases
+          WHERE user_story_id = ? AND status != 'Passed'
+        `).all(parseInt(id));
+
+        if (failedTestCases.length > 0) {
+          const failedTestCaseIds = failedTestCases.map(tc => tc.id);
+          issues.push(`${failedTestCases.length} test cases not passed (IDs: ${failedTestCaseIds.join(', ')})`);
+        }
+
+        if (issues.length > 0) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot move user story to UAT: ${issues.join(', ')}`,
+            validation_details: {
+              open_task_ids: openTasks.map(t => t.id),
+              open_bug_ids: openBugs.map(b => b.id),
+              failed_test_case_ids: failedTestCases.map(tc => tc.id)
+            }
+          });
+        }
+      }
+
+      // Check for Closed transition requirements
+      if (status === 'Closed') {
+        if (story.status !== 'UAT') {
+          return res.status(400).json({
+            success: false,
+            error: 'Cannot move user story to Closed: must come from UAT status'
+          });
+        }
+
+        // Additional check: Ensure no open bugs when closing
+        const openBugs = database.prepare(`
+          SELECT id FROM bugs
+          WHERE user_story_id = ? AND status != 'Closed'
+        `).all(parseInt(id));
+
+        if (openBugs.length > 0) {
+          const openBugIds = openBugs.map(b => b.id);
+          return res.status(400).json({
+            success: false,
+            error: `Cannot close user story: ${openBugs.length} bugs are not closed (IDs: ${openBugIds.join(', ')})`,
+            open_bug_ids: openBugIds
+          });
+        }
+      }
+    }
+
     // Build update query dynamically
     const updates: string[] = [];
     const params: any[] = [];

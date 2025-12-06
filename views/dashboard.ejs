@@ -1858,8 +1858,8 @@
         return;
       }
 
-      if (description && description.length > 2000) {
-        showEditToast('Description must be less than 2000 characters', 'error');
+      if (description && description.length > 10000) {
+        showEditToast('Description must be less than 10000 characters', 'error');
         return;
       }
 
