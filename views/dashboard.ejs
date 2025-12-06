@@ -1814,6 +1814,7 @@
         document.getElementById('editUserStoryPoints').value = story.story_points || '';
         document.getElementById('editUserStoryStatus').value = story.status || 'New';
         document.getElementById('editUserStoryAssignedTo').value = story.assigned_to || '';
+        document.getElementById('editUserStoryTransitionedBy').value = '';
       } catch (error) {
         console.error('Error loading user story for edit:', error);
         showEditToast('Failed to load user story', 'error');
@@ -1846,6 +1847,9 @@
       const title = document.getElementById('editUserStoryTitle').value.trim();
       const description = document.getElementById('editUserStoryDescription').value.trim();
       const storyPoints = document.getElementById('editUserStoryPoints').value;
+      const status = document.getElementById('editUserStoryStatus').value;
+      const assignedTo = document.getElementById('editUserStoryAssignedTo').value;
+      const transitionedBy = document.getElementById('editUserStoryTransitionedBy').value;
 
       // Basic validation
       if (!title) {
@@ -1868,14 +1872,22 @@
         return;
       }
 
+      if (!transitionedBy) {
+        showEditToast('Transitioned by is required', 'error');
+        return;
+      }
+
       const formData = {
         title: title,
         description: description || null,
-        story_points: storyPoints ? parseInt(storyPoints) : null
+        story_points: storyPoints ? parseInt(storyPoints) : null,
+        status: status || undefined,
+        assigned_to: assignedTo || undefined,
+        transitioned_by: transitionedBy
       };
 
       try {
-        const response = await fetch(`/api/user-stories/${storyId}`, {
+        const response = await fetch(`/api/user-stories/${storyId}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
@@ -2114,19 +2126,33 @@
                   </select>
                 </div>
               </div>
-              <div class="col-md-6">
-                <div class="mb-3">
-                  <label for="editUserStoryAssignedTo" class="form-label">Assigned To</label>
-                  <select class="form-select" id="editUserStoryAssignedTo">
-                    <option value="">Not assigned</option>
-                    <option value="productmanager">Product Manager</option>
-                    <option value="architect">Architect</option>
-                    <option value="developer">Developer</option>
-                    <option value="tester">Tester</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+               <div class="col-md-6">
+                 <div class="mb-3">
+                   <label for="editUserStoryAssignedTo" class="form-label">Assigned To</label>
+                   <select class="form-select" id="editUserStoryAssignedTo">
+                     <option value="">Not assigned</option>
+                     <option value="productmanager">Product Manager</option>
+                     <option value="architect">Architect</option>
+                     <option value="developer">Developer</option>
+                     <option value="tester">Tester</option>
+                   </select>
+                 </div>
+               </div>
+             </div>
+             <div class="row">
+               <div class="col-md-6">
+                 <div class="mb-3">
+                   <label for="editUserStoryTransitionedBy" class="form-label">Transitioned By</label>
+                   <select class="form-select" id="editUserStoryTransitionedBy" required>
+                     <option value="">Select who is making this change</option>
+                     <option value="productmanager">Product Manager</option>
+                     <option value="architect">Architect</option>
+                     <option value="developer">Developer</option>
+                     <option value="tester">Tester</option>
+                   </select>
+                 </div>
+               </div>
+             </div>
           </form>
         </div>
         <div class="modal-footer">
