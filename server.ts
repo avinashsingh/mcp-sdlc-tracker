@@ -192,7 +192,8 @@ app.get('/api/epics', async (req, res) => {
     const epics = database.prepare(`
       SELECT e.*, COUNT(us.id) as user_story_count
       FROM epics e
-      LEFT JOIN user_stories us ON e.id = us.epic_id
+      LEFT JOIN user_stories us ON e.id = us.epic_id AND us.archived = 0
+      WHERE e.archived = 0
       GROUP BY e.id
       ORDER BY e.created_at DESC
     `).all();
@@ -208,7 +209,7 @@ app.get('/api/epics', async (req, res) => {
           LEFT JOIN tasks t ON us.id = t.user_story_id
           LEFT JOIN bugs b ON us.id = b.user_story_id
           LEFT JOIN test_cases tc ON us.id = tc.user_story_id
-          WHERE us.epic_id = ?
+          WHERE us.epic_id = ? AND us.archived = 0
           GROUP BY us.id
           ORDER BY us.created_at DESC
         `).all(epic.id);
