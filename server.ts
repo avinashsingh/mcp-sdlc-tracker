@@ -1284,6 +1284,51 @@ app.post('/api/tasks/:id/status', async (req, res) => {
       });
     }
 
+    // Validate task status transitions and role restrictions
+    if (status) {
+      if (status === 'Prepare' && task.status !== 'New') {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot move task to Prepare: must come from New status'
+        });
+      }
+
+      if (status === 'Prepare' && transitioned_by !== 'programmanager') {
+        return res.status(400).json({
+          success: false,
+          error: 'Only programmanager can move task to Prepare status'
+        });
+      }
+
+      if (status === 'In Progress' && task.status === 'Prepare' && transitioned_by !== 'architect') {
+        return res.status(400).json({
+          success: false,
+          error: 'Only architect can move task from Prepare to In Progress'
+        });
+      }
+
+      if (status === 'Review' && task.status === 'In Progress' && transitioned_by !== 'developer') {
+        return res.status(400).json({
+          success: false,
+          error: 'Only developer can move task from In Progress to Review'
+        });
+      }
+
+      if (status === 'In Progress' && task.status === 'Review' && transitioned_by !== 'architect') {
+        return res.status(400).json({
+          success: false,
+          error: 'Only architect can move task from Review to In Progress'
+        });
+      }
+
+      if (status === 'In Progress' && task.status !== 'Prepare' && task.status !== 'Review') {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot move task to In Progress: must come from Prepare or Review status'
+        });
+      }
+    }
+
     // Build update query dynamically
     const updates: string[] = [];
     const params: any[] = [];

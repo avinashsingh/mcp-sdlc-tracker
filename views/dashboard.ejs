@@ -1821,13 +1821,16 @@
       }
     }
 
+    let originalTask = null;
+
     async function loadTaskForEdit(taskId) {
       try {
         const response = await fetch(`/api/task/${taskId}`);
         if (!response.ok) throw new Error('Failed to load task');
-        
+
         const task = await response.json();
-        
+        originalTask = task; // Store original task data
+
         // Populate form fields
         document.getElementById('editTaskId').value = task.id;
         document.getElementById('editTaskTitle').value = task.title || '';
@@ -1941,33 +1944,62 @@
         return;
       }
 
+      const status = document.getElementById('editTaskStatus').value;
+      const assignedTo = document.getElementById('editTaskAssignedTo').value;
+
       const formData = {
         title: title,
         description: description || null,
         estimated_hours: estimatedHours ? parseFloat(estimatedHours) : null,
-        priority: priority
+        priority: priority,
+        status: status,
+        assigned_to: assignedTo || null,
+        transitioned_by: 'architect' // TODO: Get from user context
       };
 
       try {
-        const response = await fetch(`/api/tasks/${taskId}`, {
+        // Separate API calls for task details and status updates
+        const detailResponse = await fetch(`/api/tasks/${taskId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({
+            title: title,
+            description: description || null,
+            estimated_hours: estimatedHours ? parseFloat(estimatedHours) : null,
+            priority: priority
+          })
         });
 
-        const result = await response.json();
-        
-        if (response.ok && result.success) {
+        let statusResponse = { ok: true, json: async () => ({ success: true }) };
+
+        // Only call status update if status or assignment changed
+        if (status !== originalTask.status || assignedTo !== (originalTask.assigned_to || '')) {
+          statusResponse = await fetch(`/api/tasks/${taskId}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              status: status,
+              assigned_to: assignedTo || null,
+              transitioned_by: 'architect' // TODO: Get from user context
+            })
+          });
+        }
+
+        const detailResult = await detailResponse.json();
+        const statusResult = await statusResponse.json();
+
+        if ((detailResponse.ok || statusResponse.ok) && (detailResult.success || statusResult.success)) {
           showEditToast('Task updated successfully', 'success');
-          
+
           // Close modal
           const modal = bootstrap.Modal.getInstance(document.getElementById('editTaskModal'));
           modal.hide();
-          
+
           // Refresh data
           await loadData();
         } else {
-          showEditToast(result.error || 'Failed to update task', 'error');
+          const errorMsg = detailResult.error || statusResult.error || 'Failed to update task';
+          showEditToast(errorMsg, 'error');
         }
       } catch (error) {
         console.error('Error saving task:', error);
@@ -2202,12 +2234,13 @@
               <div class="col-md-4">
                 <div class="mb-3">
                   <label for="editTaskStatus" class="form-label">Status</label>
-                  <select class="form-select" id="editTaskStatus">
-                    <option value="New">New</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Review">Review</option>
-                    <option value="Closed">Closed</option>
-                  </select>
+                   <select class="form-select" id="editTaskStatus">
+                     <option value="New">New</option>
+                     <option value="Prepare">Prepare</option>
+                     <option value="In Progress">In Progress</option>
+                     <option value="Review">Review</option>
+                     <option value="Closed">Closed</option>
+                   </select>
                 </div>
               </div>
               <div class="col-md-4">
