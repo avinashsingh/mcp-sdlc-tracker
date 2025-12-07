@@ -18,7 +18,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
         assigned_to: z.string().optional(),
         transitioned_by: z.enum(['productmanager', 'programmanager', 'developer', 'tester', 'architect']),
         phase: z.string().optional(),
-        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional()
+        phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked', 'Open', 'Fixed', 'Closed']).optional(),
+        priority: z.enum(['low', 'medium', 'high']).optional(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        estimated_hours: z.number().optional()
       },
       outputSchema: {
         success: z.boolean(),
@@ -39,7 +43,7 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
         })).optional()
       }
     },
-    async ({ entity_type, entity_id, status, assigned_to, transitioned_by, phase, phase_status }) => {
+    async ({ entity_type, entity_id, status, assigned_to, transitioned_by, phase, phase_status, priority, title, description, estimated_hours }) => {
       try {
         const database = getDatabase();
 
@@ -379,6 +383,26 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
         if (phase_status !== undefined) {
           updateFields.push('phase_status = ?');
           updateValues.push(phase_status);
+        }
+
+        if (priority !== undefined && entity_type === 'task') {
+          updateFields.push('priority = ?');
+          updateValues.push(priority);
+        }
+
+        if (title !== undefined) {
+          updateFields.push('title = ?');
+          updateValues.push(title);
+        }
+
+        if (description !== undefined) {
+          updateFields.push('description = ?');
+          updateValues.push(description);
+        }
+
+        if (estimated_hours !== undefined && entity_type === 'task') {
+          updateFields.push('estimated_hours = ?');
+          updateValues.push(estimated_hours);
         }
 
         if (updateFields.length === 0) {
