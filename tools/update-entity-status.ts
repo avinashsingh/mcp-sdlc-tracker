@@ -315,14 +315,40 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
             };
           }
 
-          if (status === 'In Progress' && currentEntity.status !== 'Prepare' && currentEntity.status !== 'New') {
+          if (status === 'Review' && currentEntity.status === 'In Progress' && transitioned_by !== 'developer') {
             return {
-              content: [{ type: 'text', text: 'Cannot move task to In Progress: must come from New or Prepare status' }],
+              content: [{ type: 'text', text: 'Only developer can move task from In Progress to Review' }],
               structuredContent: {
                 success: false,
                 entity_type,
                 entity_id,
-                error: 'Cannot move task to In Progress: must come from New or Prepare status'
+                error: 'Only developer can move task from In Progress to Review'
+              },
+              isError: true
+            };
+          }
+
+          if (status === 'In Progress' && currentEntity.status === 'Review' && transitioned_by !== 'architect') {
+            return {
+              content: [{ type: 'text', text: 'Only architect can move task from Review to In Progress' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Only architect can move task from Review to In Progress'
+              },
+              isError: true
+            };
+          }
+
+          if (status === 'In Progress' && currentEntity.status !== 'Prepare' && currentEntity.status !== 'Review') {
+            return {
+              content: [{ type: 'text', text: 'Cannot move task to In Progress: must come from Prepare or Review status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Cannot move task to In Progress: must come from Prepare or Review status'
               },
               isError: true
             };

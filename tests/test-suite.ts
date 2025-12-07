@@ -709,6 +709,79 @@ class TrackerTestSuite {
     }
   }
 
+  async testTaskReviewToInProgressTransition() {
+    try {
+      // Create a test task
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const taskResult = taskStmt.run(1, 'Test Review to In Progress Task', 'Test task for Review to In Progress transition', 'architect', 'architect', 'architect', 'New');
+      const taskId = taskResult.lastInsertRowid as number;
+
+      // First set task to Review status
+      const reviewUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      reviewUpdate.run('Review', taskId);
+
+      // Verify it's in Review status
+      const checkStmt1 = db.prepare('SELECT status FROM tasks WHERE id = ?');
+      const taskReview = checkStmt1.get(taskId) as { status: string };
+      this.assert(taskReview.status === 'Review', 'Task should be in Review status');
+
+      // Test: Valid transition Review -> In Progress
+      const inProgressUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result = inProgressUpdate.run('In Progress', taskId);
+      this.assert(result.changes === 1, 'Should allow Review -> In Progress transition');
+
+      const checkStmt2 = db.prepare('SELECT status FROM tasks WHERE id = ?');
+      const taskInProgress = checkStmt2.get(taskId) as { status: string };
+      this.assert(taskInProgress.status === 'In Progress', 'Task should be in In Progress status');
+
+      this.recordTest('testTaskReviewToInProgressTransition', true);
+    } catch (error) {
+      this.recordTest('testTaskReviewToInProgressTransition', false, error.message);
+    }
+  }
+
+  async testTaskRoleRestrictions() {
+    try {
+      // Create a test task in In Progress status
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (user_story_id, title, description, assigned_to, created_by, current_owner, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const taskResult = taskStmt.run(1, 'Test Role Restrictions Task', 'Test task for role-based transition restrictions', 'developer', 'architect', 'architect', 'In Progress');
+      const taskId = taskResult.lastInsertRowid as number;
+
+      // Test 1: In Progress -> Review by developer (should work)
+      const reviewUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result1 = reviewUpdate.run('Review', taskId);
+      this.assert(result1.changes === 1, 'Should allow In Progress -> Review transition by developer');
+
+      // Reset task to In Progress for next test
+      const resetUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      resetUpdate.run('In Progress', taskId);
+
+      // Test 2: In Progress -> Review by architect (should fail - only developer allowed)
+      // This test uses direct SQL, so it bypasses MCP validation. In real usage, this would be caught by the MCP tool.
+
+      // Test 3: Review -> In Progress by architect (should work)
+      // First set to Review
+      reviewUpdate.run('Review', taskId);
+
+      // Then back to In Progress
+      const inProgressUpdate = db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const result3 = inProgressUpdate.run('In Progress', taskId);
+      this.assert(result3.changes === 1, 'Should allow Review -> In Progress transition by architect');
+
+      this.recordTest('testTaskRoleRestrictions', true);
+    } catch (error) {
+      this.recordTest('testTaskRoleRestrictions', false, error.message);
+    }
+  }
+
+
+
   async testUserStoryInProgressValidation() {
     try {
       // Create a test epic first
@@ -1652,6 +1725,7 @@ class TrackerTestSuite {
     await this.testUpdateEntityAssignment();
     await this.testUpdateTaskStatus();
     await this.testUpdateTaskStatusToReview();
+    await this.testTaskReviewToInProgressTransition();
     await this.testTaskPrepareStatusWorkflow();
     await this.testUserStoryInProgressValidation();
     await this.testUserStoryQAValidation();

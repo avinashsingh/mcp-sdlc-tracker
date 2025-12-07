@@ -511,7 +511,7 @@ The server implements a complete Software Development Lifecycle with proper stak
 - **Epics**: New → Open → Closed (owned by productmanager)
 - **User Stories**: New → In Progress → QA → UAT → Closed (productmanager → architect → developer → tester → productmanager)
   - **Validation**: Cannot move to 'In Progress' without acceptance criteria and test cases
-- **Tasks**: New → In Progress → Review → Closed (architect → developer → architect)
+- **Tasks**: New → Prepare → In Progress ↔ Review → Closed (programmanager → architect → developer → architect, with possible return to In Progress for rework)
 - **Bugs**: Open → In Progress → Review → Fixed → Closed (any stakeholder can be involved)
   - **Validation**: 'Review' can only be set from 'In Progress', cannot jump directly to 'Fixed'
 - **Test Cases**: New, Passed, Failed (tester → productmanager → tester)
