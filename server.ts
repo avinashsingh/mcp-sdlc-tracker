@@ -1327,6 +1327,13 @@ app.post('/api/tasks/:id/status', async (req, res) => {
           error: 'Cannot move task to In Progress: must come from Prepare or Review status'
         });
       }
+
+      if (status === 'Closed' && task.status !== 'Review') {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot close task: must come from Review status'
+        });
+      }
     }
 
     // Build update query dynamically

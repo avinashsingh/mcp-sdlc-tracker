@@ -357,6 +357,19 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
               isError: true
             };
           }
+
+          if (status === 'Closed' && currentEntity.status !== 'Review') {
+            return {
+              content: [{ type: 'text', text: 'Cannot close task: must come from Review status' }],
+              structuredContent: {
+                success: false,
+                entity_type,
+                entity_id,
+                error: 'Cannot close task: must come from Review status'
+              },
+              isError: true
+            };
+          }
         }
 
         // Build update query
