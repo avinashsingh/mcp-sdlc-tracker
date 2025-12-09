@@ -1843,10 +1843,28 @@ server.registerTool(
              task.assigned_to || 'developer' // Default owner
            );
 
-          results.push({
-            success: true,
-            task_id: result.lastInsertRowid as number
-          });
+           results.push({
+             success: true,
+             task_id: result.lastInsertRowid as number
+           });
+
+           // Check and update user story status if needed
+           const userStory = database.prepare('SELECT status FROM user_stories WHERE id = ?').get(task.user_story_id);
+           if (userStory.status === 'QA' || userStory.status === 'Closed') {
+             // Update user story status to 'In Progress'
+             database.prepare(`
+               UPDATE user_stories
+               SET status = 'In Progress', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?
+             `).run(task.user_story_id);
+
+             // Record status transition for audit trail
+             database.prepare(`
+               INSERT INTO status_transitions
+               (entity_type, entity_id, from_status, to_status, transitioned_by)
+               VALUES (?, ?, ?, ?, ?)
+             `).run('user_story', task.user_story_id, userStory.status, 'In Progress', 'developer');
+           }
         } catch (error) {
           results.push({
             success: false,
