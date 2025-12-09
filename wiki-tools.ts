@@ -337,6 +337,8 @@ export function registerListWikiPages(server: any) {
 
           // Add metadata filters
           const conditions: string[] = [];
+          conditions.push('wp.status <> ?');
+          params.push('Archived');
           if (status) {
             conditions.push('wp.status = ?');
             params.push(status);
