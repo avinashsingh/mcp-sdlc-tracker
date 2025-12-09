@@ -1795,7 +1795,7 @@ server.registerTool(
         description: z.string().optional(),
         estimated_hours: z.number().optional(),
         assigned_to: z.enum(['architect', 'developer']).optional(),
-        priority: z.enum(['low', 'medium', 'high']).optional(),
+        priority: z.enum(['low', 'medium', 'high']),
         phase: z.string().optional(),
         phase_status: z.enum(['Not Started', 'In Progress', 'Completed', 'Blocked']).optional()
       })).min(1)
@@ -1830,18 +1830,18 @@ server.registerTool(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
 
-          const result = stmt.run(
-            task.user_story_id || null,
-            task.title,
-            task.description || null,
-            task.estimated_hours || null,
-            task.assigned_to || null,
-            task.priority || null,
-            task.phase || null,
-            task.phase_status || null,
-            'developer', // Default creator
-            task.assigned_to || 'developer' // Default owner
-          );
+           const result = stmt.run(
+             task.user_story_id || null,
+             task.title,
+             task.description || null,
+             task.estimated_hours || null,
+             task.assigned_to || null,
+             task.priority,
+             task.phase || null,
+             task.phase_status || null,
+             'developer', // Default creator
+             task.assigned_to || 'developer' // Default owner
+           );
 
           results.push({
             success: true,
@@ -2217,7 +2217,7 @@ server.registerTool(
         created_at: z.string(),
         updated_at: z.string(),
         closed_at: z.string().nullable(),
-        priority: z.string(),
+         priority: z.string().nullable(),
         comment_count: z.number(),
         dependencies: z.array(z.number()),
         dependent_tasks: z.array(z.number()),

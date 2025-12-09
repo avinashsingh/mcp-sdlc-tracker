@@ -410,6 +410,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.donottouc
 - `status`: Status ('New', 'In Progress', 'Review', 'Closed')
 - `created_by/current_owner/assigned_to`: Stakeholder assignments ('architect', 'developer')
 - `estimated_hours/actual_hours`: Time tracking (optional)
+- `priority`: Task priority ('low', 'medium', 'high') - required
 - `phase`: Phase name (optional, nullable)
 - `phase_status`: Phase completion status (optional, defaults to 'New')
 - `created_at/updated_at/closed_at`: Timestamps

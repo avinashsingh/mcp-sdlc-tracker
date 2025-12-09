@@ -199,8 +199,8 @@ class SQLQueryTests {
     
     await tracker_create_tasks({
       tasks: [
-        { user_story_id: 1, title: 'Task 1 - New', description: 'Test task 1', assigned_to: 'developer', estimated_hours: 4 },
-        { user_story_id: 1, title: 'Task 2 - In Progress', description: 'Test task 2', assigned_to: 'developer', estimated_hours: 6 }
+        { user_story_id: 1, title: 'Task 1 - New', description: 'Test task 1', assigned_to: 'developer', estimated_hours: 4, priority: 'medium' },
+        { user_story_id: 1, title: 'Task 2 - In Progress', description: 'Test task 2', assigned_to: 'developer', estimated_hours: 6, priority: 'high' }
       ]
     });
   }
