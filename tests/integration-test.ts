@@ -237,12 +237,12 @@ class MCPIntegrationTester {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Check if database file exists
-      if (!existsSync('.project_tracker.db')) {
+      if (!existsSync('.project_tracker.donottouch')) {
         throw new Error('Database file not created');
       }
 
       // Test database connectivity and operations
-      const db = new Database('.project_tracker.db');
+      const db = new Database('.project_tracker.donottouch');
 
       // Test basic database operations
       const epicCount = db.prepare('SELECT COUNT(*) as count FROM epics').get() as { count: number };
@@ -267,7 +267,7 @@ class MCPIntegrationTester {
     let passed = 0;
     let total = 0;
 
-    const db = new Database('.project_tracker.db');
+    const db = new Database('.project_tracker.donottouch');
 
     try {
       // Test Create Operations
@@ -369,7 +369,7 @@ class MCPIntegrationTester {
   async cleanupTestData(): Promise<void> {
     console.log('🧹 Cleaning up test data...');
 
-    const db = new Database('.project_tracker.db');
+    const db = new Database('.project_tracker.donottouch');
 
     try {
       db.exec(`
@@ -446,10 +446,10 @@ class MCPIntegrationTester {
     console.log('🧪 Starting MCP Integration Test Suite...\n');
 
     // Backup existing database if it exists
-    const dbExists = existsSync('.project_tracker.db');
+    const dbExists = existsSync('.project_tracker.donottouch');
     if (dbExists) {
-      console.log('💾 Backing up existing .project_tracker.db...');
-      renameSync('.project_tracker.db', '.project_tracker.db.backup');
+      console.log('💾 Backing up existing .project_tracker.donottouch...');
+      renameSync('.project_tracker.donottouch', '.project_tracker.donottouch.backup');
     }
 
     const results: any[] = [];
@@ -497,13 +497,13 @@ class MCPIntegrationTester {
 
       // Restore original database if it existed
       if (dbExists) {
-        console.log('🔄 Restoring original .project_tracker.db...');
+        console.log('🔄 Restoring original .project_tracker.donottouch...');
         try {
-          if (existsSync('.project_tracker.db')) {
+          if (existsSync('.project_tracker.donottouch')) {
             // Remove test database
-            unlinkSync('.project_tracker.db');
+            unlinkSync('.project_tracker.donottouch');
           }
-          renameSync('.project_tracker.db.backup', '.project_tracker.db');
+          renameSync('.project_tracker.donottouch.backup', '.project_tracker.donottouch');
           console.log('✅ Original database restored');
         } catch (error) {
           console.log('⚠️  Failed to restore original database:', error.message);

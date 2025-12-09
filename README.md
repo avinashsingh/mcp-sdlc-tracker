@@ -275,13 +275,13 @@ Before using any other tools, you must initialize the database. You have two opt
 
 #### Option 1: MCP Tool (Recommended for AI Agents)
 1. Call the `initialize` tool and provide your current working directory path (e.g., "/Users/username/project")
-2. The tool will create `.project_tracker.db` in that directory and set up all necessary tables
+2. The tool will create `.project_tracker.donottouch` in that directory and set up all necessary tables
 3. The tool will automatically create or update `.gitignore` to exclude the database file from version control
 
 #### Option 2: HTTP API (For Web Applications)
 1. Start the server: `npm start`
 2. Call `POST /api/initialize` with: `{"currentProjectLocation": "/path/to/project"}`
-3. The API will create `.project_tracker.db` and establish the database connection
+3. The API will create `.project_tracker.donottouch` and establish the database connection
 4. The API will automatically create or update `.gitignore` to exclude the database file from version control
 
 ### Connecting to MCP Clients
@@ -364,7 +364,7 @@ For all clients, ensure you're running the command from your project directory w
 
 ## Database Schema
 
-The `initialize` tool creates a SQLite database file `.project_tracker.db` in the specified directory with a complete SDLC schema:
+The `initialize` tool creates a SQLite database file `.project_tracker.donottouch` in the specified directory with a complete SDLC schema:
 
 ### Core SDLC Entities
 

@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const testDir = join(__dirname, 'test_epic_deps');
-const dbPath = join(testDir, '.project_tracker.db');
+const dbPath = join(testDir, '.project_tracker.donottouch');
 
 console.log('🧪 Testing manage_epic_dependencies MCP Tool');
 console.log('===========================================');

@@ -141,7 +141,7 @@ app.post('/api/initialize', async (req, res) => {
 
     // Use currentProjectLocation as projectDir and construct dbFilePath
     const projectDir = currentProjectLocation;
-    const dbFilePath = `${projectDir}/.project_tracker.db`;
+    const dbFilePath = `${projectDir}/.project_tracker.donottouch`;
 
     // Check if already initialized
     if (isInitialized) {
@@ -1558,7 +1558,7 @@ server.registerTool(
       }
 
       const projectDir = path;
-      const dbFilePath = `${projectDir}/.project_tracker.db`;
+      const dbFilePath = `${projectDir}/.project_tracker.donottouch`;
 
       // Check if already initialized
       if (isInitialized) {
@@ -1588,8 +1588,8 @@ server.registerTool(
          gitignoreContent = readFileSync(gitignorePath, 'utf8');
        }
 
-       // Check if .project_tracker.db is already in .gitignore
-       const dbEntry = '.project_tracker.db';
+       // Check if .project_tracker.donottouch is already in .gitignore
+       const dbEntry = '.project_tracker.donottouch';
        if (!gitignoreContent.includes(dbEntry)) {
          // Add the database file to .gitignore
          if (gitignoreContent && !gitignoreContent.endsWith('\n')) {
