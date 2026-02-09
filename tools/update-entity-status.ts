@@ -64,6 +64,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
               success: false,
               entity_type,
               entity_id,
+              old_status: null,
+              new_status: status || null,
+              old_assigned_to: null,
+              new_assigned_to: assigned_to !== undefined ? assigned_to : null,
+              transitioned_by,
               error: `${entity_type} with ID ${entity_id} does not exist`
             },
             isError: true
@@ -86,6 +91,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                   success: false,
                   entity_type,
                   entity_id,
+                  old_status: currentEntity.status,
+                  new_status: status || currentEntity.status,
+                  old_assigned_to: currentEntity.assigned_to,
+                  new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                  transitioned_by,
                   error: `Cannot close epic: ${openStories.count} user stories are not closed`
                 },
                 isError: true
@@ -104,6 +114,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
                     error: 'Cannot move user story to In Progress: acceptance criteria required'
                   },
                   isError: true
@@ -122,6 +137,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
                     error: 'Cannot move user story to In Progress: test cases required'
                   },
                   isError: true
@@ -143,8 +163,12 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
-                    error: `Cannot move user story to QA: ${openTasks.length} tasks are not closed`,
-                    open_task_ids: openTaskIds
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
+                    error: `Cannot move user story to QA: ${openTasks.length} tasks are not closed`
                   },
                   isError: true
                 };
@@ -211,12 +235,12 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
-                    error: `Cannot move user story to UAT: ${issues.join(', ')}`,
-                    validation_details: {
-                      open_task_ids: openTasks.map(t => t.id),
-                      open_bug_ids: openBugs.map(b => b.id),
-                      failed_test_case_ids: failedTestCases.map(tc => tc.id)
-                    }
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
+                    error: `Cannot move user story to UAT: ${issues.join(', ')}`
                   },
                   isError: true
                 };
@@ -231,6 +255,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
                     error: 'Cannot move user story to Closed: must come from UAT status'
                   },
                   isError: true
@@ -243,6 +272,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                     success: false,
                     entity_type,
                     entity_id,
+                    old_status: currentEntity.status,
+                    new_status: status || currentEntity.status,
+                    old_assigned_to: currentEntity.assigned_to,
+                    new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                    transitioned_by,
                     error: 'Only productmanager can close user stories'
                   },
                   isError: true
@@ -259,6 +293,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Cannot move bug to Review: must come from In Progress status'
               },
               isError: true
@@ -271,6 +310,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Cannot move bug to Fixed: must come from Review status'
               },
               isError: true
@@ -287,6 +331,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Cannot move task to Prepare: must come from New status'
               },
               isError: true
@@ -300,6 +349,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Only programmanager can move task to Prepare status'
               },
               isError: true
@@ -313,6 +367,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Only architect can move task from Prepare to In Progress'
               },
               isError: true
@@ -326,6 +385,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Only developer can move task from In Progress to Review'
               },
               isError: true
@@ -339,6 +403,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Only architect can move task from Review to In Progress'
               },
               isError: true
@@ -352,6 +421,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Cannot move task to In Progress: must come from Prepare or Review status'
               },
               isError: true
@@ -365,6 +439,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
                 success: false,
                 entity_type,
                 entity_id,
+                old_status: currentEntity.status,
+                new_status: status || currentEntity.status,
+                old_assigned_to: currentEntity.assigned_to,
+                new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+                transitioned_by,
                 error: 'Cannot close task: must come from Review status'
               },
               isError: true
@@ -425,6 +504,11 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
               success: false,
               entity_type,
               entity_id,
+              old_status: currentEntity.status,
+              new_status: status || currentEntity.status,
+              old_assigned_to: currentEntity.assigned_to,
+              new_assigned_to: assigned_to !== undefined ? assigned_to : currentEntity.assigned_to,
+              transitioned_by,
               error: 'No changes to update'
             },
             isError: true
@@ -523,6 +607,17 @@ export function registerUpdateEntityStatus(server: any, getDatabase: () => Datab
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error updating entity status: ${error.message}` }],
+          structuredContent: {
+            success: false,
+            entity_type,
+            entity_id,
+            old_status: null,
+            new_status: status || null,
+            old_assigned_to: null,
+            new_assigned_to: assigned_to !== undefined ? assigned_to : null,
+            transitioned_by,
+            error: `Error updating entity status: ${error.message}`
+          },
           isError: true
         };
       }

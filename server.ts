@@ -1623,7 +1623,11 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error initializing database: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          message: error.message
+        }
       };
     }
   }
@@ -1689,7 +1693,13 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error creating epics: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: [{
+            success: false,
+            error: error.message
+          }]
+        }
       };
     }
   }
@@ -1777,7 +1787,13 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error creating user stories: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: [{
+            success: false,
+            error: error.message
+          }]
+        }
       };
     }
   }
@@ -1881,7 +1897,13 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error creating tasks: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: [{
+            success: false,
+            error: error.message
+          }]
+        }
       };
     }
   }
@@ -2037,7 +2059,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error listing epics: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          data: [],
+          total_count: 0,
+          filtered_count: 0
+        }
       };
     }
   }
@@ -2219,7 +2246,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error listing user stories: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          data: [],
+          total_count: 0,
+          filtered_count: 0
+        }
       };
     }
   }
@@ -2396,7 +2428,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error listing tasks: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          data: [],
+          total_count: 0,
+          filtered_count: 0
+        }
       };
     }
   }
@@ -2521,7 +2558,10 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Failed to manage story dependencies: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: []
+        }
       };
     }
   }
@@ -2682,7 +2722,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error updating epic: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          epic_id: epic_id,
+          error: error.message
+        }
       };
     }
   }
@@ -2761,7 +2806,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error archiving epic: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          epic_id: epic_id,
+          error: error.message
+        }
       };
     }
   }
@@ -2882,7 +2932,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error updating user story: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          story_id: story_id,
+          error: error.message
+        }
       };
     }
   }
@@ -2918,6 +2973,8 @@ server.registerTool(
           structuredContent: {
             success: false,
             story_id,
+            old_acceptance_criteria: null,
+            new_acceptance_criteria: acceptance_criteria,
             error: 'User story not found'
           }
         };
@@ -2929,6 +2986,8 @@ server.registerTool(
           structuredContent: {
             success: false,
             story_id,
+            old_acceptance_criteria: story.acceptance_criteria,
+            new_acceptance_criteria: acceptance_criteria,
             error: 'Cannot update archived user story'
           }
         };
@@ -2957,6 +3016,8 @@ server.registerTool(
           structuredContent: {
             success: false,
             story_id,
+            old_acceptance_criteria: story.acceptance_criteria,
+            new_acceptance_criteria: acceptance_criteria,
             error: 'Failed to update user story acceptance criteria'
           }
         };
@@ -2965,7 +3026,14 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error updating user story acceptance criteria: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          story_id: story_id,
+          old_acceptance_criteria: null,
+          new_acceptance_criteria: acceptance_criteria,
+          error: error.message
+        }
       };
     }
   }
@@ -3044,7 +3112,12 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Error archiving user story: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          success: false,
+          story_id: story_id,
+          error: error.message
+        }
       };
     }
   }
@@ -3191,7 +3264,10 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Failed to manage epic dependencies: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: []
+        }
       };
     }
    }
@@ -3346,7 +3422,10 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: 'text', text: `Failed to manage task dependencies: ${error.message}` }],
-        isError: true
+        isError: true,
+        structuredContent: {
+          results: []
+        }
       };
     }
   }
