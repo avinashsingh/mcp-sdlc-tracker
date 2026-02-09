@@ -40,7 +40,15 @@ export function registerListTestCases(server: any, getDatabase: () => Database.D
       try {
         const database = getDatabase();
 
-        let query = 'SELECT * FROM test_cases WHERE 1=1';
+        let query = `SELECT tc.id,
+               tc.user_story_id,
+               tc.title,
+               tc.description,
+               tc.status,
+               tc.assigned_to,
+               tc.created_at,
+               tc.updated_at
+        FROM test_cases tc WHERE 1=1`;
         const params: any[] = [];
 
         if (user_story_id) {

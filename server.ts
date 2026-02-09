@@ -1539,7 +1539,8 @@ server.registerTool(
     },
     outputSchema: {
       success: z.boolean(),
-      message: z.string()
+      message: z.string(),
+      database_path: z.string().optional()
     }
    },
   async ({ path }) => {
@@ -1933,7 +1934,16 @@ server.registerTool(
       const database = getDatabase();
 
       let query = `
-        SELECT e.*,
+        SELECT e.id,
+               e.title,
+               e.description,
+               e.status,
+               e.created_by,
+               e.owner,
+               e.assigned_to,
+               e.created_at,
+               e.updated_at,
+               e.archived,
                COUNT(us.id) as user_story_count,
                COUNT(c.id) as comment_count
         FROM epics e
@@ -2087,7 +2097,21 @@ server.registerTool(
       const database = getDatabase();
 
       let query = `
-        SELECT us.*,
+        SELECT us.id,
+               us.epic_id,
+               us.title,
+               us.description,
+               us.acceptance_criteria,
+               us.status,
+               us.created_by,
+               us.current_owner,
+               us.assigned_to,
+               us.story_points,
+               us.phase,
+               us.phase_status,
+               us.created_at,
+               us.updated_at,
+               us.archived,
                COUNT(t.id) as task_count,
                COUNT(b.id) as bug_count,
                COUNT(tc.id) as test_case_count,

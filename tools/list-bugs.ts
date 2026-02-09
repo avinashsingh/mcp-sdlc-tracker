@@ -48,7 +48,18 @@ export function registerListBugs(server: any, getDatabase: () => Database.Databa
       try {
         const database = getDatabase();
 
-        let query = `SELECT * FROM bugs`;
+        let query = `SELECT b.id,
+               b.user_story_id,
+               b.task_id,
+               b.title,
+               b.description,
+               b.severity,
+               b.status,
+               b.reported_by,
+               b.assigned_to,
+               b.created_at,
+               b.updated_at
+        FROM bugs b`;
         const conditions = [];
         const params = [];
 
