@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that provides SQLite-based task and projec
 
 - **SDLC Entity Management**: Complete Software Development Lifecycle tracking
 - **Epics, User Stories, Tasks, Bugs, Test Cases**: Full SDLC workflow support
-- **Wiki System**: Integrated wiki for project documentation with entity linking and 256-character title limits
+- **Wiki System**: Integrated wiki for project documentation with entity linking, 256-character title limits, and full-text search
 - **Comments System**: Stakeholder feedback and collaboration on all entities with comment counts
 - **Epic Dependencies**: Epics can depend on other epics (similar to user story dependencies)
 - **Workflow Enforcement**: Proper stakeholder ownership and status transitions
@@ -139,15 +139,12 @@ The system provides intelligent workflow guidance across the entire SDLC:
 - `get_comments`: Retrieve comments for a specific SDLC entity
 
 ### Wiki Management
-- `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification (titles limited to 256 characters)
-- `update_wiki_page`: Update wiki page content, metadata, and tags (titles limited to 256 characters)
+- `create_wiki_page`: Create wiki pages with Markdown content, tags, and category classification (titles limited to 256 characters, categories: technical, process, business, qa, knowledge)
+- `update_wiki_page`: Update wiki page content, metadata, and tags (titles limited to 256 characters, categories: technical, process, business, qa, knowledge)
 - `list_wiki_pages`: List wiki pages with filtering by category, status, tags, or search terms
 - `get_wiki_page`: Get detailed wiki page content with linked entities
 - `manage_wiki_links`: Add or remove links between wiki pages and SDLC entities
 - `archive_wiki_page`: Archive wiki pages (moves to Archived status)
-
-### Knowledge Graph Generation
-- `get_knowledge_graph`: Generate and return the knowledge graph for the initialized project, analyzing Python, JavaScript/TypeScript, and Java files to extract imports, classes, functions, and dependencies
 
 ## Error Handling & Validation
 
@@ -204,50 +201,12 @@ The server also provides a REST API for web applications and direct HTTP access:
 - `GET /api/wiki`: List all wiki pages with metadata and tags
 - `GET /api/wiki/:id`: Get specific wiki page with full content and linked entities
 - `GET /api/wiki/search?q=term`: Search wiki pages by title or content
-- `GET /api/get-knowledge-graph`: Generate and retrieve knowledge graph data for the initialized project
-  - Response: JSON object with tree structure and file analysis
 
 ### Features
 - **Comment Counts**: All entities include `comment_count` field
 - **Dependency Information**: Epics and user stories include dependency arrays
 - **Boolean Fields**: Proper boolean values (true/false) for archived fields
 - **JSON Responses**: All endpoints return structured JSON data
-
-## Resources Available
-
-- `database_schema`: Provides information about the database schema and table structures
-
-## Knowledge Graph
-
-The knowledge graph tools analyze project codebases to create structured representations of the codebase:
-
-### Supported Languages
-- **Python** (.py): Extracts imports, classes, functions, and function calls
-- **JavaScript/TypeScript** (.js, .ts, .jsx, .tsx): Extracts ES6/CommonJS imports, classes, functions, and calls
-- **Java** (.java): Extracts imports, classes, methods, and method calls
-
-### Output Format
-The knowledge graph is saved as `.kg.json` in the project root and contains:
-```json
-{
-  "t": "Project tree structure as text",
-  "f": [
-    {
-      "f": "relative/file/path",
-      "i": ["import1", "import2"],
-      "c": ["Class1", "Class2"],
-      "fn": ["function1", "function2"],
-      "ca": ["call1", "call2"]
-    }
-  ]
-}
-```
-
-### Usage
-- Automatically excludes build directories, node_modules, and generated files
-- Requires project initialization first (like other tools)
-- Generates knowledge graph at runtime without storing files
-- Can be used for code analysis, dependency visualization, and project understanding
 
 ## Installation
 
@@ -478,7 +437,7 @@ The `initialize` tool creates a SQLite database file `.project_tracker.donottouc
 - `id`: Primary key (auto-increment)
 - `title`: Wiki page title (required, unique)
 - `content`: Markdown content (required)
-- `category`: Category classification ('technical', 'process', 'requirements', 'architecture', 'other')
+- `category`: Category classification ('technical', 'process', 'business', 'qa', 'knowledge')
 - `tags`: Array of tag strings for organization
 - `created_by/updated_by`: Stakeholder who created/updated the page
 - `created_at/updated_at`: Timestamps
@@ -620,40 +579,37 @@ Once connected to an MCP client, you can:
 16. "List epics with dependency information"
 
 ### Bug Tracking
-7. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
-8. "List all open bugs with high severity"
+17. "Create bugs: 'Login fails on mobile devices' (Critical, reported by tester) and 'Password reset email not sent' (High, reported by productmanager)" (Note: User story and task references are validated if provided)
+18. "List all open bugs with high severity"
 
 ### Test Case Creation
-9. "Create test cases: 'Verify user can login successfully' and 'Verify password reset works' for user story 1" (Note: User story references are validated if provided)
-10. "List test cases that have failed"
+19. "Create test cases: 'Verify user can login successfully' and 'Verify password reset works' for user story 1" (Note: User story references are validated if provided)
+20. "List test cases that have failed"
 
 ### Comments and Collaboration
-11. "Add comment on user story 1: 'Need to ensure security best practices' by architect"
-12. "Add comment on bug 1: 'Validation should check email format' by developer"
+21. "Add comment on user story 1: 'Need to ensure security best practices' by architect"
+22. "Add comment on bug 1: 'Validation should check email format' by developer"
 
 ### Wiki Documentation
-13. "Create wiki page: 'API Authentication Guide' with content about OAuth2 flow, category 'technical', tags ['authentication', 'security', 'api']"
-14. "Create wiki page: 'Deployment Process' with step-by-step deployment instructions, category 'process', tags ['deployment', 'ci-cd']"
-15. "List all wiki pages in technical category"
-16. "Update wiki page content for 'API Authentication Guide' with additional OAuth2 details"
-17. "Link wiki page 'API Authentication Guide' to user story 1 and task 2"
-18. "Search wiki pages for 'authentication'"
+23. "Create wiki page: 'API Authentication Guide' with content about OAuth2 flow, category 'technical', tags ['authentication', 'security', 'api']"
+24. "Create wiki page: 'Deployment Process' with step-by-step deployment instructions, category 'process', tags ['deployment', 'ci-cd']"
+25. "List all wiki pages in technical category"
+26. "Update wiki page content for 'API Authentication Guide' with additional OAuth2 details"
+27. "Link wiki page 'API Authentication Guide' to user story 1 and task 2"
+28. "Search wiki pages for 'authentication'"
 
 ### Workflow Management
-13. "Update user story 1 status to 'In Progress' transitioned by architect"
-14. "Update task 1 status to 'Closed' transitioned by developer"
+29. "Update user story 1 status to 'In Progress' transitioned by architect"
+30. "Update task 1 status to 'Closed' transitioned by developer"
 
 ### Dependencies Resolved Filtering
-15. "List epics with all dependencies resolved"
-16. "List user stories that have unresolved dependencies"
-17. "List tasks ready to start (dependencies resolved)"
-
-### Knowledge Graph Generation
-18. "Get knowledge graph data for the initialized project"
+31. "List epics with all dependencies resolved"
+32. "List user stories that have unresolved dependencies"
+33. "List tasks ready to start (dependencies resolved)"
 
 ### Bug Status Management
-18. "Update bug 1 status to 'Review' (must come from 'In Progress')"
-19. "Update bug 2 status to 'Fixed' (triggers QA verification suggestion)"
+34. "Update bug 1 status to 'Review' (must come from 'In Progress')"
+35. "Update bug 2 status to 'Fixed' (triggers QA verification suggestion)"
 
 ## Testing
 
