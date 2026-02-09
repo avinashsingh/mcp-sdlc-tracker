@@ -26,11 +26,16 @@ export function registerReadFullFile(server: any) {
       try {
         // Check if file exists
         if (!existsSync(file_path)) {
+          const errorMsg = `File does not exist: ${file_path}`;
           return {
             content: [{ 
               type: 'text', 
-              text: `File does not exist: ${file_path}` 
+              text: errorMsg 
             }],
+            structuredContent: {
+              success: false,
+              error: errorMsg
+            },
             isError: true
           };
         }
@@ -46,11 +51,16 @@ export function registerReadFullFile(server: any) {
           }
         };
       } catch (error) {
+        const errorMsg = `Error reading file: ${error instanceof Error ? error.message : String(error)}`;
         return {
           content: [{ 
             type: 'text', 
-            text: `Error reading file: ${error instanceof Error ? error.message : String(error)}` 
+            text: errorMsg 
           }],
+          structuredContent: {
+            success: false,
+            error: errorMsg
+          },
           isError: true
         };
       }

@@ -139,8 +139,14 @@ export function registerGetKnowledgeGraph(server: any, getRootPath: () => string
           structuredContent: kg
         };
       } catch (error) {
+        const errorMsg = `Error getting knowledge graph: ${error instanceof Error ? error.message : String(error)}`;
         return {
-          content: [{ type: 'text', text: `Error getting knowledge graph: ${error.message}` }],
+          content: [{ type: 'text', text: errorMsg }],
+          structuredContent: {
+            t: '',
+            f: [],
+            error: errorMsg
+          },
           isError: true
         };
       }

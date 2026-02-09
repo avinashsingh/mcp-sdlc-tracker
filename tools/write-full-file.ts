@@ -29,11 +29,16 @@ export function registerWriteFullFile(server: any) {
         // Check line count - throw error if more than 400 lines
         const lines = body.split('\n');
         if (lines.length > 400) {
+          const errorMsg = `Max lines allowed in a file is 400, your file has ${lines.length} lines. Please split your logic.`;
           return {
             content: [{ 
               type: 'text', 
-              text: `Max lines allowed in a file is 400, your file has ${lines.length} lines. Please split your logic.` 
+              text: errorMsg 
             }],
+            structuredContent: {
+              success: false,
+              error: errorMsg
+            },
             isError: true
           };
         }
@@ -80,11 +85,16 @@ export function registerWriteFullFile(server: any) {
           }
         };
       } catch (error) {
+        const errorMsg = `Error writing file: ${error instanceof Error ? error.message : String(error)}`;
         return {
           content: [{ 
             type: 'text', 
-            text: `Error writing file: ${error instanceof Error ? error.message : String(error)}` 
+            text: errorMsg 
           }],
+          structuredContent: {
+            success: false,
+            error: errorMsg
+          },
           isError: true
         };
       }
