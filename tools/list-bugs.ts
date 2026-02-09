@@ -132,7 +132,12 @@ export function registerListBugs(server: any, getDatabase: () => Database.Databa
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error listing bugs: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            data: [],
+            total_count: 0,
+            filtered_count: 0
+          }
         };
       }
     }

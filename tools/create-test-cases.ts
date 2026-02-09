@@ -87,7 +87,13 @@ export function registerCreateTestCases(server: any, getDatabase: () => Database
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error creating test cases: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            results: [{
+              success: false,
+              error: error.message
+            }]
+          }
         };
       }
     }

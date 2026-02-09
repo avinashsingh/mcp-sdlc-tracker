@@ -95,7 +95,11 @@ export function registerListTestCases(server: any, getDatabase: () => Database.D
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error listing test cases: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            test_cases: [],
+            count: 0
+          }
         };
       }
     }

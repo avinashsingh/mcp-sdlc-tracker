@@ -135,7 +135,13 @@ export function registerCreateBugs(server: any, getDatabase: () => Database.Data
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error creating bugs: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            results: [{
+              success: false,
+              error: error.message
+            }]
+          }
         };
       }
     }

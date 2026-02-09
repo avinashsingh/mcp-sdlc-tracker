@@ -85,7 +85,13 @@ export function registerCreateComments(server: any, getDatabase: () => Database.
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error creating comments: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            results: [{
+              success: false,
+              error: error.message
+            }]
+          }
         };
       }
     }

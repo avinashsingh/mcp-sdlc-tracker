@@ -75,7 +75,11 @@ export function registerGetComments(server: any, getDatabase: () => Database.Dat
       } catch (error) {
         return {
           content: [{ type: 'text', text: `Error getting comments: ${error.message}` }],
-          isError: true
+          isError: true,
+          structuredContent: {
+            comments: [],
+            total_count: 0
+          }
         };
       }
     }
