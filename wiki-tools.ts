@@ -53,8 +53,13 @@ export function registerCreateWikiPage(server: any) {
         if (category !== undefined) {
           const allowedCategories = ['technical', 'process', 'business', 'qa', 'knowledge'];
           if (!allowedCategories.includes(category)) {
+            const output = {
+              success: false,
+              error: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}`
+            };
             return {
-              content: [{ type: 'text', text: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}` }],
+              content: [{ type: 'text', text: output.error }],
+              structuredContent: output,
               isError: true
             };
           }
@@ -64,8 +69,13 @@ export function registerCreateWikiPage(server: any) {
         if (assigned_to !== undefined) {
           const allowedAssignees = ['productmanager', 'programmanager', 'developer', 'tester', 'architect'];
           if (!allowedAssignees.includes(assigned_to)) {
+            const output = {
+              success: false,
+              error: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}`
+            };
             return {
-              content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+              content: [{ type: 'text', text: output.error }],
+              structuredContent: output,
               isError: true
             };
           }
@@ -81,8 +91,13 @@ export function registerCreateWikiPage(server: any) {
         // Check if slug already exists
         const existing = database.prepare('SELECT id FROM wiki_pages WHERE slug = ?').get(slug);
         if (existing) {
+          const output = {
+            success: false,
+            error: 'Wiki page with this title already exists'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page with this title already exists' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -117,8 +132,13 @@ export function registerCreateWikiPage(server: any) {
           structuredContent: output
         };
       } catch (error) {
+        const output = {
+          success: false,
+          error: `Error creating wiki page: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error creating wiki page: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
@@ -157,8 +177,15 @@ export function registerUpdateWikiPage(server: any) {
         if (category !== undefined) {
           const allowedCategories = ['technical', 'process', 'business', 'qa', 'knowledge'];
           if (!allowedCategories.includes(category)) {
+            const output = {
+              success: false,
+              wiki_page_id,
+              new_version: 0,
+              error: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}`
+            };
             return {
-              content: [{ type: 'text', text: `Invalid category value: ${category}. Must be one of: ${allowedCategories.join(', ')}` }],
+              content: [{ type: 'text', text: output.error }],
+              structuredContent: output,
               isError: true
             };
           }
@@ -168,8 +195,15 @@ export function registerUpdateWikiPage(server: any) {
         if (assigned_to !== undefined) {
           const allowedAssignees = ['productmanager', 'programmanager', 'developer', 'tester', 'architect'];
           if (!allowedAssignees.includes(assigned_to)) {
+            const output = {
+              success: false,
+              wiki_page_id,
+              new_version: 0,
+              error: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}`
+            };
             return {
-              content: [{ type: 'text', text: `Invalid assigned_to value: ${assigned_to}. Must be one of: ${allowedAssignees.join(', ')}` }],
+              content: [{ type: 'text', text: output.error }],
+              structuredContent: output,
               isError: true
             };
           }
@@ -178,8 +212,15 @@ export function registerUpdateWikiPage(server: any) {
         // Get current page data
         const currentPage = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
         if (!currentPage) {
+          const output = {
+            success: false,
+            wiki_page_id,
+            new_version: 0,
+            error: 'Wiki page not found'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page not found' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -230,6 +271,7 @@ export function registerUpdateWikiPage(server: any) {
           updateValues.push(assigned_to);
         }
 
+        let newVersion = currentPage.version;
         if (updateFields.length > 0) {
           updateFields.push('version = version + 1');
           updateFields.push('updated_at = CURRENT_TIMESTAMP');
@@ -241,12 +283,13 @@ export function registerUpdateWikiPage(server: any) {
           `);
           updateValues.push(wiki_page_id);
           updateStmt.run(...updateValues);
+          newVersion = currentPage.version + 1;
         }
 
         const output = {
           success: true,
           wiki_page_id,
-          new_version: currentPage.version + 1
+          new_version: newVersion
         };
 
         return {
@@ -254,8 +297,15 @@ export function registerUpdateWikiPage(server: any) {
           structuredContent: output
         };
       } catch (error) {
+        const output = {
+          success: false,
+          wiki_page_id: wiki_page_id || 0,
+          new_version: 0,
+          error: `Error updating wiki page: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error updating wiki page: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
@@ -432,9 +482,13 @@ export function registerListWikiPages(server: any) {
           }
         });
 
+        // Get actual total count from database
+        const countResult = database.prepare('SELECT COUNT(*) as total FROM wiki_pages').get();
+        const totalCount = countResult ? countResult.total : 0;
+
         const output = {
           data: pages,
-          total_count: pages.length,
+          total_count: totalCount,
           filtered_count: pages.length,
           search_performed: searchPerformed
         };
@@ -444,8 +498,16 @@ export function registerListWikiPages(server: any) {
           structuredContent: output
         };
       } catch (error) {
+        const output = {
+          data: [],
+          total_count: 0,
+          filtered_count: 0,
+          search_performed: false,
+          error: `Error listing wiki pages: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error listing wiki pages: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
@@ -497,15 +559,25 @@ export function registerGetWikiPage(server: any) {
         } else if (slug) {
           page = database.prepare('SELECT * FROM wiki_pages WHERE slug = ?').get(slug);
         } else {
+          const output = {
+            success: false,
+            error: 'Either wiki_page_id or slug must be provided'
+          };
           return {
-            content: [{ type: 'text', text: 'Either wiki_page_id or slug must be provided' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
 
         if (!page) {
+          const output = {
+            success: false,
+            error: 'Wiki page not found'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page not found' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -539,8 +611,13 @@ export function registerGetWikiPage(server: any) {
           structuredContent: page
         };
       } catch (error) {
+        const output = {
+          success: false,
+          error: `Error getting wiki page: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error getting wiki page: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
@@ -586,8 +663,16 @@ export function registerManageWikiLinks(server: any) {
         // Verify wiki page exists
         const page = database.prepare('SELECT id FROM wiki_pages WHERE id = ?').get(wiki_page_id);
         if (!page) {
+          const output = {
+            success: false,
+            wiki_page_id,
+            added_links: [],
+            removed_links: [],
+            error: 'Wiki page not found'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page not found' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -646,8 +731,16 @@ export function registerManageWikiLinks(server: any) {
           structuredContent: output
         };
       } catch (error) {
+        const output = {
+          success: false,
+          wiki_page_id: wiki_page_id || 0,
+          added_links: [],
+          removed_links: [],
+          error: `Error managing wiki links: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error managing wiki links: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
@@ -680,16 +773,32 @@ export function registerArchiveWikiPage(server: any) {
         // Get current page data
         const page = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
         if (!page) {
+          const output = {
+            success: false,
+            wiki_page_id,
+            archived_at: '',
+            archived_by: '',
+            error: 'Wiki page not found'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page not found' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
 
         // Check if already archived
         if (page.status === 'Archived') {
+          const output = {
+            success: false,
+            wiki_page_id,
+            archived_at: page.archived_at || '',
+            archived_by: page.archived_by || '',
+            error: 'Wiki page is already archived'
+          };
           return {
-            content: [{ type: 'text', text: 'Wiki page is already archived' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -708,8 +817,16 @@ export function registerArchiveWikiPage(server: any) {
         const result = archiveStmt.run(archivedBy, wiki_page_id);
 
         if (result.changes === 0) {
+          const output = {
+            success: false,
+            wiki_page_id,
+            archived_at: '',
+            archived_by: '',
+            error: 'Failed to archive wiki page'
+          };
           return {
-            content: [{ type: 'text', text: 'Failed to archive wiki page' }],
+            content: [{ type: 'text', text: output.error }],
+            structuredContent: output,
             isError: true
           };
         }
@@ -729,8 +846,16 @@ export function registerArchiveWikiPage(server: any) {
           structuredContent: output
         };
       } catch (error) {
+        const output = {
+          success: false,
+          wiki_page_id: wiki_page_id || 0,
+          archived_at: '',
+          archived_by: '',
+          error: `Error archiving wiki page: ${error.message}`
+        };
         return {
-          content: [{ type: 'text', text: `Error archiving wiki page: ${error.message}` }],
+          content: [{ type: 'text', text: output.error }],
+          structuredContent: output,
           isError: true
         };
       }
