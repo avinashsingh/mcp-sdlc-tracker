@@ -987,7 +987,8 @@ server.registerTool(
     },
     outputSchema: {
       success: z.boolean(),
-      message: z.string()
+      message: z.string(),
+      database_path: z.string().optional()
     }
    },
   async ({ path }) => {
@@ -1319,7 +1320,11 @@ server.registerTool(
         assigned_to: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string(),
+        closed_at: z.string().nullable(),
         archived: z.boolean(),
+        archived_at: z.string().nullable(),
+        archived_by: z.string().nullable(),
+        archive_reason: z.string().nullable(),
         user_story_count: z.number(),
         comment_count: z.number(),
         dependencies: z.array(z.number()),
@@ -1471,7 +1476,12 @@ server.registerTool(
         phase_status: z.string().nullable(),
         created_at: z.string(),
         updated_at: z.string(),
+        tester_at: z.string().nullable(),
+        closed_at: z.string().nullable(),
         archived: z.boolean(),
+        archived_at: z.string().nullable(),
+        archived_by: z.string().nullable(),
+        archive_reason: z.string().nullable(),
         task_count: z.number(),
         bug_count: z.number(),
         test_case_count: z.number(),
