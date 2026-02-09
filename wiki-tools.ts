@@ -554,10 +554,11 @@ export function registerGetWikiPage(server: any) {
         const database = getDatabaseSafe();
 
         let page;
+        const selectFields = 'id, title, slug, content, summary, category, tags, status, version, created_by, current_owner, assigned_to, created_at, updated_at';
         if (wiki_page_id) {
-          page = database.prepare('SELECT * FROM wiki_pages WHERE id = ?').get(wiki_page_id);
+          page = database.prepare(`SELECT ${selectFields} FROM wiki_pages WHERE id = ?`).get(wiki_page_id);
         } else if (slug) {
-          page = database.prepare('SELECT * FROM wiki_pages WHERE slug = ?').get(slug);
+          page = database.prepare(`SELECT ${selectFields} FROM wiki_pages WHERE slug = ?`).get(slug);
         } else {
           const output = {
             success: false,
